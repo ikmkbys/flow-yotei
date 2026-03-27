@@ -7,6 +7,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import type { YoteiEvent, Response, Availability } from '@/lib/types';
+import HowToModal from '@/components/HowToModal';
 
 /* 30分刻みの時刻オプション */
 const TIME_OPTIONS = ['', ...Array.from({ length: 48 }, (_, i) => {
@@ -83,6 +84,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
   const [notFound, setNotFound]       = useState(false);
   const [isCreator, setIsCreator]     = useState(false);   // 作成者かどうか
   const [showEdit, setShowEdit]       = useState(false);   // イベント編集パネル表示
+  const [showHowTo, setShowHowTo]     = useState(false);   // 使い方モーダル
   // 編集フォーム用state
   const [editTitle, setEditTitle]     = useState('');
   const [editDesc, setEditDesc]       = useState('');
@@ -281,8 +283,17 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
       <header>
         <div className="header-inner">
           <a href="/" className="logo">FLOW YOTEI<span>.</span></a>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => setShowHowTo(true)}
+            style={{ marginLeft: 'auto', fontSize: 13 }}
+          >
+            ？ 使い方
+          </button>
         </div>
       </header>
+      {showHowTo && <HowToModal mode="respond" onClose={() => setShowHowTo(false)} />}
 
       <main className="container" style={{ paddingTop: 32, paddingBottom: 60 }}>
 

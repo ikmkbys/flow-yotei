@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { collection, addDoc, Timestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import HowToModal from '@/components/HowToModal';
 
 /* 30分刻みの時刻オプションを生成（00:00〜23:30） */
 const TIME_OPTIONS = ['', ...Array.from({ length: 48 }, (_, i) => {
@@ -29,6 +30,7 @@ export default function CreatePage() {
   const [calYear,  setCalYear]  = useState(() => new Date().getFullYear());
   const [calMonth, setCalMonth] = useState(() => new Date().getMonth()); // 0-indexed
   const [loading, setLoading] = useState(false);
+  const [showHowTo, setShowHowTo] = useState(false);  // 使い方モーダル
   const [history, setHistory]   = useState<{ id: string; title: string; createdAt: number }[]>([]);
 
   /* localStorageから履歴を読み込む（クライアントのみ） */
@@ -130,8 +132,17 @@ export default function CreatePage() {
       <header>
         <div className="header-inner">
           <a href="/" className="logo">FLOW YOTEI<span>.</span></a>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => setShowHowTo(true)}
+            style={{ marginLeft: 'auto', fontSize: 13 }}
+          >
+            ？ 使い方
+          </button>
         </div>
       </header>
+      {showHowTo && <HowToModal mode="create" onClose={() => setShowHowTo(false)} />}
 
       <main className="container" style={{ paddingTop: 40, paddingBottom: 60 }}>
         {/* Hero */}
