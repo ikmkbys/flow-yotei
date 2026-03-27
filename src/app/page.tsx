@@ -23,10 +23,12 @@ export default function CreatePage() {
   const [deadlineTime, setDeadlineTime] = useState(''); // 締め切り時刻
   const [creatorName, setCreatorName] = useState('');
   // { date: '2026-03-27', time: '19:00' } の形で管理
-  const [dates, setDates] = useState<{ date: string; time: string }[]>([{ date: '', time: '' }]);
-  const [showEarlyHours, setShowEarlyHours] = useState(false);  // 深夜帯時刻表示フラグ
-  const [loading, setLoading]   = useState(false);
-  const [dateError, setDateError] = useState('');  // 日付重複エラー
+  const [dates, setDates] = useState<{ date: string; time: string }[]>([]);
+  const [sharedTime, setSharedTime]   = useState('');            // カレンダー共通時刻
+  const [showEarlyHours, setShowEarlyHours] = useState(false);   // 深夜帯時刻表示フラグ
+  const [calYear,  setCalYear]  = useState(() => new Date().getFullYear());
+  const [calMonth, setCalMonth] = useState(() => new Date().getMonth()); // 0-indexed
+  const [loading, setLoading] = useState(false);
   const [history, setHistory]   = useState<{ id: string; title: string; createdAt: number }[]>([]);
 
   /* localStorageから履歴を読み込む（クライアントのみ） */
@@ -35,48 +37,68 @@ export default function CreatePage() {
     setHistory(saved);
   }, []);
 
-  /* 1つ上の日付の翌日を初期値として追加 */
-  const addDate = () => {
-    const last = dates[dates.length - 1];
-    if (last?.date) {
-      const d = new Date(last.date + 'T00:00:00');
-      d.setDate(d.getDate() + 1);
-      const nextDate = d.toISOString().split('T')[0];
-      setDates([...dates, { date: nextDate, time: last.time }]);
+  /* カレンダーグリッド生成（null=空セル） */
+  const getCalendarDays = (year: number, month: number): (number | null)[] => {
+    const firstDay = new Date(year, month, 1).getDay();       // 曜日（0=日）
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    return [...Array(firstDay).fill(null), ...Array.from({ length: daysInMonth }, (_, i) => i + 1)];
+  };
+
+  /* カレンダー月移動 */
+  const prevMonth = () => calMonth === 0 ? (setCalYear(y => y - 1), setCalMonth(11)) : setCalMonth(m => m - 1);
+  const nextMonth = () => calMonth === 11 ? (setCalYear(y => y + 1), setCalMonth(0))  : setCalMonth(m => m + 1);
+
+  /* 日付文字列を生成 */
+  const toDateStr = (day: number) =>
+    `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
+  /* カレンダーをクリックして日付をトグル */
+  const toggleCalendarDate = (day: number) => {
+    const dateStr = toDateStr(day);
+    const exists = dates.some(d => d.date === dateStr && d.time === sharedTime);
+    if (exists) {
+      setDates(prev => prev.filter(d => !(d.date === dateStr && d.time === sharedTime)));
     } else {
-      setDates([...dates, { date: '', time: '' }]);
+      setDates(prev => [...prev, { date: dateStr, time: sharedTime }]
+        .sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || ''))));
     }
   };
+
+  /* その日に選択済みエントリがあるか（時刻問わず） */
+  const isDateSelected = (day: number) => dates.some(d => d.date === toDateStr(day));
+
+  /* その日の共通時刻と完全一致するエントリがあるか */
+  const isExactSelected = (day: number) => dates.some(d => d.date === toDateStr(day) && d.time === sharedTime);
 
   /* 日付候補を削除 */
   const removeDate = (i: number) =>
     setDates(dates.filter((_, idx) => idx !== i));
 
-  /* 日付・時間を更新 */
+  /* 時間を更新（更新後にソート＆重複排除） */
   const updateDate = (i: number, field: 'date' | 'time', val: string) =>
-    setDates(dates.map((d, idx) => idx === i ? { ...d, [field]: val } : d));
-
-  /* 重複チェック */
-  const hasDuplicateDate = (list: { date: string; time: string }[]) => {
-    const keys = list.filter(d => d.date).map(d => `${d.date}_${d.time}`);
-    return new Set(keys).size !== keys.length;
-  };
+    setDates(prev => {
+      const updated = prev.map((d, idx) => idx === i ? { ...d, [field]: val } : d)
+        .sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')));
+      // 同一 date+time の重複を排除（後から来たものを消す）
+      const seen = new Set<string>();
+      return updated.filter(d => {
+        const key = `${d.date}_${d.time}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    });
 
   /* イベント作成 */
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     // "2026-03-27T19:00" or "2026-03-27" の文字列に変換して保存
+    // 重複排除してから保存
+    const seen = new Set<string>();
     const validDates = dates
-      .filter(d => d.date)
+      .filter(d => { const k = `${d.date}_${d.time}`; if (seen.has(k)) return false; seen.add(k); return true; })
       .map(d => d.time ? `${d.date}T${d.time}` : d.date);
     if (!title || !creatorName || validDates.length === 0) return;
-
-    // 重複チェック
-    if (hasDuplicateDate(dates.filter(d => d.date))) {
-      setDateError('同じ日程・時刻が重複しています');
-      return;
-    }
-    setDateError('');
     setLoading(true);
     try {
       const ref = await addDoc(collection(db, 'events'), {
@@ -191,7 +213,7 @@ export default function CreatePage() {
 
             {/* 日付候補 */}
             <div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
                 <label style={{ marginBottom: 0 }}>日程候補 <span style={{ color: 'var(--red)' }}>*</span></label>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--muted)', cursor: 'pointer', userSelect: 'none' }}>
                   <input
@@ -203,51 +225,111 @@ export default function CreatePage() {
                   0:00〜6:00も使用する
                 </label>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {dates.map((d, i) => (
-                  <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <input
-                      type="date"
-                      value={d.date}
-                      onChange={e => updateDate(i, 'date', e.target.value)}
-                      onClick={e => (e.target as HTMLInputElement).showPicker?.()}
-                      style={{ flex: 2 }}
-                    />
-                    <select
-                      value={d.time}
-                      onChange={e => updateDate(i, 'time', e.target.value)}
-                      style={{ flex: 1 }}
-                    >
-                      {TIME_OPTIONS
-                        .filter(t => t === '' || showEarlyHours || parseInt(t.split(':')[0]) >= 6 || t === d.time)
-                        .map(t => (
-                          <option key={t} value={t}>{t || '時刻（任意）'}</option>
-                        ))}
-                    </select>
-                    {dates.length > 1 && (
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm"
-                        onClick={() => removeDate(i)}
-                        aria-label="削除"
-                      >
-                        ✕
-                      </button>
-                    )}
-                  </div>
-                ))}
+
+              {/* 共通時刻セレクタ */}
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12,
+                background: 'var(--indigo-soft, #ede9fe)', border: '1.5px solid var(--indigo)',
+                borderRadius: 10, padding: '10px 14px',
+              }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--indigo)', whiteSpace: 'nowrap' }}>
+                  🕐 共通時刻
+                </span>
+                <select
+                  value={sharedTime}
+                  onChange={e => setSharedTime(e.target.value)}
+                  style={{ flex: 1, borderColor: 'var(--indigo)', fontWeight: 600 }}
+                >
+                  {TIME_OPTIONS
+                    .filter(t => t === '' || showEarlyHours || parseInt(t.split(':')[0]) >= 6 || t === sharedTime)
+                    .map(t => <option key={t} value={t}>{t || '時刻なし（終日）'}</option>)}
+                </select>
+                <span style={{ fontSize: 12, color: 'var(--indigo)', whiteSpace: 'nowrap', opacity: 0.8 }}>
+                  ← 先に設定
+                </span>
               </div>
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={addDate}
-                style={{ marginTop: 8 }}
-              >
-                ＋ 日程を追加
-              </button>
-              {dateError && (
-                <p style={{ color: 'var(--red)', fontSize: 13, marginTop: 6 }}>⚠️ {dateError}</p>
+
+              {/* カレンダー */}
+              <div style={{ border: '1.5px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
+                {/* ヘッダー */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', background: 'var(--bg2)', borderBottom: '1px solid var(--border)' }}>
+                  <button type="button" onClick={prevMonth} className="btn btn-ghost btn-sm" style={{ padding: '4px 10px' }}>＜</button>
+                  <span style={{ fontWeight: 700, fontSize: 15 }}>{calYear}年{calMonth + 1}月</span>
+                  <button type="button" onClick={nextMonth} className="btn btn-ghost btn-sm" style={{ padding: '4px 10px' }}>＞</button>
+                </div>
+                {/* 曜日ヘッダー */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', background: 'var(--bg2)', borderBottom: '1px solid var(--border)' }}>
+                  {['日', '月', '火', '水', '木', '金', '土'].map((w, i) => (
+                    <div key={w} style={{ textAlign: 'center', fontSize: 12, fontWeight: 600, padding: '6px 0', color: i === 0 ? '#ef4444' : i === 6 ? '#6366f1' : 'var(--muted)' }}>
+                      {w}
+                    </div>
+                  ))}
+                </div>
+                {/* 日付グリッド */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 1, padding: 8, background: 'var(--border)' }}>
+                  {getCalendarDays(calYear, calMonth).map((day, i) => {
+                    if (!day) return <div key={i} style={{ background: 'var(--bg)', aspectRatio: '1' }} />;
+                    const exact   = isExactSelected(day);   // 現在の共通時刻と完全一致
+                    const anyTime = isDateSelected(day);     // 別の時刻で登録済み
+                    const partial = anyTime && !exact;       // 別の時刻のみ登録あり
+                    const dow = (i) % 7;                     // 曜日インデックス
+                    const isToday = toDateStr(day) === new Date().toISOString().split('T')[0];
+                    // 3ステート背景・文字色
+                    const bg    = exact   ? 'var(--indigo)' : partial ? '#c7d2fe' : 'var(--bg)';
+                    const color = exact   ? '#fff'          : partial ? 'var(--indigo)'
+                                : dow === 0 ? '#ef4444' : dow === 6 ? '#6366f1' : 'var(--text)';
+                    const border = exact   ? 'none'
+                                 : partial ? '2px solid var(--indigo)'
+                                 : isToday ? '2px solid var(--indigo)' : 'none';
+                    return (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => toggleCalendarDate(day)}
+                        title={partial ? '別の時刻で登録済み（クリックで現在の共通時刻を追加）' : undefined}
+                        style={{
+                          aspectRatio: '1',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: 14, fontWeight: anyTime ? 700 : 400,
+                          background: bg, color, border,
+                          borderRadius: 8, cursor: 'pointer',
+                          transition: 'all 0.12s',
+                        }}
+                      >
+                        {day}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <p className="hint" style={{ marginTop: 6 }}>日付をクリックで追加／もう一度クリックで削除</p>
+
+              {/* 選択済み日程リスト */}
+              {dates.length > 0 && (
+                <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)' }}>選択中 {dates.length}件 — 時刻は個別に変更できます</p>
+                  {dates.map((d, i) => {
+                    const dateObj = new Date(d.date + 'T00:00:00');
+                    const label = dateObj.toLocaleDateString('ja-JP', { month: 'short', day: 'numeric', weekday: 'short' });
+                    return (
+                      <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <span style={{ flex: 2, fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{label}</span>
+                        <select
+                          value={d.time}
+                          onChange={e => updateDate(i, 'time', e.target.value)}
+                          style={{ flex: 1, fontSize: 13 }}
+                        >
+                          {TIME_OPTIONS
+                            .filter(t => t === '' || showEarlyHours || parseInt(t.split(':')[0]) >= 6 || t === d.time)
+                            .map(t => <option key={t} value={t}>{t || '時刻なし'}</option>)}
+                        </select>
+                        <button type="button" className="btn btn-ghost btn-sm" onClick={() => removeDate(i)} aria-label="削除">✕</button>
+                      </div>
+                    );
+                  })}
+                </div>
               )}
+
             </div>
 
             <hr className="divider" style={{ margin: '4px 0' }} />
@@ -270,7 +352,7 @@ export default function CreatePage() {
             <button
               type="submit"
               className="btn btn-primary"
-              disabled={loading || !title || !creatorName || dates.filter(d => d.date).length === 0}
+              disabled={loading || !title || !creatorName || dates.length === 0}
               style={{ justifyContent: 'center', marginTop: 4 }}
             >
               {loading ? '作成中...' : '✦ イベントを作成する'}
