@@ -80,6 +80,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
   const [submitting, setSubmitting]   = useState(false);
   const [submitted, setSubmitted]     = useState(false);
   const [myResponseId, setMyResponseId] = useState<string | null>(null);  // 編集用：自分のレスポンスID
+  const [comment, setComment]         = useState('');          // 一言コメント
   const [copied, setCopied]           = useState(false);
   const [notFound, setNotFound]       = useState(false);
   const [isCreator, setIsCreator]     = useState(false);   // 作成者かどうか
@@ -155,12 +156,14 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
       await updateDoc(doc(db, 'events', id, 'responses', myResponseId), {
         name,
         availability: avail,
+        comment: comment || null,
       });
     } else {
       // 新規登録
       const ref = await addDoc(collection(db, 'events', id, 'responses'), {
         name,
         availability: avail,
+        comment: comment || null,
         createdAt: Timestamp.now(),
       });
       setMyResponseId(ref.id);  // 次回編集用にIDを保持
@@ -234,6 +237,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
   const handleSelectResponse = (r: Response) => {
     setName(r.name);
     setAvail(r.availability);
+    setComment(r.comment ?? '');
     setMyResponseId(r.id ?? null);
     setSubmitted(false);
     // フォームまでスクロール
@@ -243,15 +247,22 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
   /* 出欠表をCSVダウンロード */
   const downloadCsv = () => {
     if (!event) return;
-    const headers = ['日程', ...responses.map(r => r.name), '○', '△', '×'];
+    const headers = ['日程', ...responses.map(r => r.name), '○', '△', '×', 'コメント'];
     const rows = event.dates.map(date => [
       formatDate(date),
       ...responses.map(r => r.availability[date] ?? '−'),
       countAvail(responses, date, '○'),
       countAvail(responses, date, '△'),
       countAvail(responses, date, '×'),
+      '',  // コメントは日程行には不要
     ]);
-    const csv = [headers, ...rows]
+    // コメント行を末尾に追加
+    const commentRow = [
+      'コメント',
+      ...responses.map(r => r.comment ?? ''),
+      '', '', '', '',
+    ];
+    const csv = [headers, ...rows, commentRow]
       .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
       .join('\n');
     const bom = '\uFEFF';  // Excel用BOM（文字化け防止）
@@ -577,6 +588,17 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
 
               <p className="hint">タップで切り替え　○ 参加できる ／ △ 未定 ／ × 参加できない</p>
 
+              <div>
+                <label htmlFor="respComment">一言コメント（任意）</label>
+                <textarea
+                  id="respComment"
+                  placeholder="「ここだけ早退かも」「楽しみにしてます！」など"
+                  value={comment}
+                  onChange={e => setComment(e.target.value)}
+                  rows={2}
+                />
+              </div>
+
               <button
                 type="submit"
                 className="btn btn-primary"
@@ -777,6 +799,28 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                   ))}
                 </tbody>
               </table>
+            </div>
+          </div>
+        )}
+
+        {/* コメント一覧 */}
+        {responses.some(r => r.comment) && (
+          <div className="card" style={{ marginTop: 16 }}>
+            <p className="section-title" style={{ marginBottom: 12 }}>💬 コメント</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {responses.filter(r => r.comment).map(r => (
+                <div key={r.id} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                  <span style={{
+                    fontSize: 12, fontWeight: 700, color: 'var(--indigo)',
+                    whiteSpace: 'nowrap', paddingTop: 2,
+                  }}>
+                    {r.name}
+                  </span>
+                  <span style={{ fontSize: 14, color: 'var(--text)', lineHeight: 1.5 }}>
+                    {r.comment}
+                  </span>
+                </div>
+              ))}
             </div>
           </div>
         )}

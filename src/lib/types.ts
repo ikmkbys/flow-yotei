@@ -16,5 +16,6 @@ export interface Response {
   id?: string;
   name: string;
   availability: Record<string, Availability>;  // date → availability
+  comment?: string;                            // 一言コメント（任意）
   createdAt?: Date;
 }
