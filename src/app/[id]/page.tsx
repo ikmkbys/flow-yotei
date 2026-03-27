@@ -95,6 +95,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
   const [editSaving, setEditSaving]       = useState(false);
   const [editDateError, setEditDateError] = useState('');
   const [showEarlyHours, setShowEarlyHours] = useState(false);  // 深夜帯時刻表示フラグ
+  const [showForm, setShowForm]           = useState(true);    // 出欠フォーム折りたたみ
 
   /* イベント取得 */
   useEffect(() => {
@@ -513,7 +514,19 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
           const isClosed = event.deadline ? new Date() > new Date(event.deadline) : false;
           return !submitted ? (
           <div className="card" style={{ marginBottom: 24 }}>
-            <p className="section-title">📅 出欠を入力</p>
+            {/* ヘッダー：タイトル＋折りたたみボタン */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: showForm ? 16 : 0 }}>
+              <p className="section-title" style={{ marginBottom: 0 }}>📅 出欠を入力</p>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => setShowForm(v => !v)}
+                style={{ fontSize: 13, color: 'var(--muted)' }}
+              >
+                {showForm ? '▲ 閉じる' : '▼ 開く'}
+              </button>
+            </div>
+            {showForm && (
             <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               <div>
                 <label htmlFor="respName">お名前 <span style={{ color: 'var(--red)' }}>*</span></label>
@@ -573,23 +586,40 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                 {submitting ? '送信中...' : myResponseId ? '回答を更新する' : '回答を送信する'}
               </button>
             </form>
+            )}
           </div>
         ) : (
           <div
             className="card"
-            style={{ marginBottom: 24, textAlign: 'center', background: '#f0fdf4', borderColor: '#bbf7d0' }}
+            style={{ marginBottom: 24, background: '#f0fdf4', borderColor: '#bbf7d0' }}
           >
-            <p style={{ fontSize: 24, marginBottom: 8 }}>✅</p>
-            <p style={{ fontWeight: 700, marginBottom: 4 }}>
-              {myResponseId ? '回答を更新しました！' : '回答を送信しました！'}
-            </p>
-            <p style={{ color: 'var(--muted)', fontSize: 13 }}>
-              下の結果表はリアルタイムで更新されます
-            </p>
-            {!isClosed && (
-              <p style={{ color: 'var(--muted)', fontSize: 12, marginTop: 8 }}>
-                予定が変わったら結果表の名前をタップして変更できます
-              </p>
+            {/* ヘッダー：折りたたみボタン付き */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: showForm ? 12 : 0 }}>
+              <p className="section-title" style={{ marginBottom: 0 }}>📅 出欠を入力</p>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => setShowForm(v => !v)}
+                style={{ fontSize: 13, color: 'var(--muted)' }}
+              >
+                {showForm ? '▲ 閉じる' : '▼ 開く'}
+              </button>
+            </div>
+            {showForm && (
+              <div style={{ textAlign: 'center' }}>
+                <p style={{ fontSize: 24, marginBottom: 8 }}>✅</p>
+                <p style={{ fontWeight: 700, marginBottom: 4 }}>
+                  {myResponseId ? '回答を更新しました！' : '回答を送信しました！'}
+                </p>
+                <p style={{ color: 'var(--muted)', fontSize: 13 }}>
+                  下の結果表はリアルタイムで更新されます
+                </p>
+                {!isClosed && (
+                  <p style={{ color: 'var(--muted)', fontSize: 12, marginTop: 8 }}>
+                    予定が変わったら結果表の名前をタップして変更できます
+                  </p>
+                )}
+              </div>
             )}
           </div>
         );
