@@ -155,7 +155,7 @@ export default function CreatePage() {
               <input
                 id="title"
                 type="text"
-                placeholder="例：4月の飲み会、プロジェクト킥オフ"
+                placeholder="例：4月の飲み会、プロジェクトキックオフ"
                 value={title}
                 onChange={e => setTitle(e.target.value)}
                 required
