@@ -178,8 +178,12 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
     }
     setEditDateError('');
     setEditSaving(true);
+    // 保存時にソート＋重複排除
+    const seen = new Set<string>();
     const newDates = editDates
       .filter(d => d.date)
+      .sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')))
+      .filter(d => { const k = `${d.date}_${d.time}`; if (seen.has(k)) return false; seen.add(k); return true; })
       .map(d => d.time ? `${d.date}T${d.time}` : d.date);
     const newDeadline = editDeadlineDate
       ? (editDeadlineTime ? `${editDeadlineDate}T${editDeadlineTime}` : `${editDeadlineDate}T23:59`)
@@ -210,17 +214,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
   };
   const removeEditDate = (i: number) => setEditDates(editDates.filter((_, idx) => idx !== i));
   const updateEditDate = (i: number, field: 'date' | 'time', val: string) =>
-    setEditDates(prev => {
-      const updated = prev.map((d, idx) => idx === i ? { ...d, [field]: val } : d)
-        .sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')));  // 日付順ソート
-      const seen = new Set<string>();
-      return updated.filter(d => {  // 重複排除
-        const key = `${d.date}_${d.time}`;
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      });
-    });
+    setEditDates(prev => prev.map((d, idx) => idx === i ? { ...d, [field]: val } : d));  // 入力中はソートしない
 
   /* 重複チェック */
   const hasDuplicateDate = (list: { date: string; time: string }[]) => {
