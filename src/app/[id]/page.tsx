@@ -210,7 +210,17 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
   };
   const removeEditDate = (i: number) => setEditDates(editDates.filter((_, idx) => idx !== i));
   const updateEditDate = (i: number, field: 'date' | 'time', val: string) =>
-    setEditDates(editDates.map((d, idx) => idx === i ? { ...d, [field]: val } : d));
+    setEditDates(prev => {
+      const updated = prev.map((d, idx) => idx === i ? { ...d, [field]: val } : d)
+        .sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')));  // 日付順ソート
+      const seen = new Set<string>();
+      return updated.filter(d => {  // 重複排除
+        const key = `${d.date}_${d.time}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    });
 
   /* 重複チェック */
   const hasDuplicateDate = (list: { date: string; time: string }[]) => {
