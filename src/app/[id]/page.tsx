@@ -123,6 +123,8 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
         setEditDeadlineDate(dDate);
         setEditDeadlineTime(dTime === '23:59' ? '' : dTime);
       }
+      // 確定済みならフォームを閉じた状態で表示
+      if (ev.confirmedDate) setShowForm(false);
       // localStorageで作成者判定
       const history = JSON.parse(localStorage.getItem('yotei_history') ?? '[]');
       setIsCreator(history.some((h: { id: string }) => h.id === id));
