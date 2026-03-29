@@ -529,7 +529,14 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
           <div className="card" style={{ marginBottom: 24 }}>
             {/* ヘッダー：タイトル＋折りたたみボタン */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: showForm ? 16 : 0 }}>
-              <p className="section-title" style={{ marginBottom: 0 }}>📅 出欠を入力</p>
+              <div>
+                <p className="section-title" style={{ marginBottom: 0 }}>📅 出欠を入力</p>
+                {event.confirmedDate && (
+                  <p style={{ fontSize: 12, color: 'var(--red)', marginTop: 4, marginBottom: 0 }}>
+                    スケジュール確定しているため入力できません。
+                  </p>
+                )}
+              </div>
               <button
                 type="button"
                 className="btn btn-ghost btn-sm"
