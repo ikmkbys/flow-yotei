@@ -522,7 +522,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
 
         {/* 回答フォーム */}
         {(() => {
-          const isClosed = event.deadline ? new Date() > new Date(event.deadline) : false;
+          const isClosed = !!event.confirmedDate || (event.deadline ? new Date() > new Date(event.deadline) : false);
           return !submitted ? (
           <div className="card" style={{ marginBottom: 24 }}>
             {/* ヘッダー：タイトル＋折りたたみボタン */}
@@ -548,6 +548,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                   value={name}
                   onChange={e => setName(e.target.value)}
                   required
+                  disabled={isClosed}
                 />
               </div>
 
@@ -575,7 +576,8 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                           key={v}
                           type="button"
                           className={`avail avail-${v === '○' ? 'ok' : v === '△' ? 'maybe' : 'ng'} ${avail[date] === v ? 'active' : ''}`}
-                          onClick={() => setAvail({ ...avail, [date]: v })}
+                          onClick={() => !isClosed && setAvail({ ...avail, [date]: v })}
+                          disabled={isClosed}
                           aria-label={v}
                         >
                           {v}
@@ -596,6 +598,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                   value={comment}
                   onChange={e => setComment(e.target.value)}
                   rows={2}
+                  disabled={isClosed}
                 />
               </div>
 
@@ -745,16 +748,16 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                     {responses.map(r => (
                       <th
                         key={r.id}
-                        onClick={() => handleSelectResponse(r)}
-                        title="クリックして回答を変更"
+                        onClick={() => !event.confirmedDate && handleSelectResponse(r)}
+                        title={event.confirmedDate ? undefined : 'クリックして回答を変更'}
                         style={{
-                          cursor: 'pointer',
+                          cursor: event.confirmedDate ? 'default' : 'pointer',
                           color: myResponseId === r.id ? 'var(--indigo)' : undefined,
-                          textDecoration: 'underline dotted',
+                          textDecoration: event.confirmedDate ? 'none' : 'underline dotted',
                           userSelect: 'none',
                         }}
                       >
-                        {r.name} ✏️
+                        {r.name}{!event.confirmedDate && ' ✏️'}
                       </th>
                     ))}
                     {/* 最右：集計列 */}
