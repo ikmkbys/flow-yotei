@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"] });  // フォント読み込み
@@ -16,7 +17,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ja" className={inter.className}>
-      <body className="min-h-screen">{children}</body>
+      <body className="min-h-screen">{children}<Analytics /></body>
     </html>
   );
 }
