@@ -11,7 +11,7 @@ async function sendDeadlineEmail(to: string, eventTitle: string, eventId: string
   if (!apiKey) throw new Error('RESEND_API_KEY is not set');
 
   const from = process.env.RESEND_FROM_EMAIL ?? 'FLOW YOTEI <onboarding@resend.dev>';
-  const eventUrl = `${process.env.NEXT_PUBLIC_BASE_URL ?? 'https://flow-yotei.vercel.app'}/${eventId}`;
+  const eventUrl = `${process.env.NEXT_PUBLIC_BASE_URL ?? 'https://flow-yotei.stellars-lab.com'}/${eventId}`;
   const safeTitle = escapeHtml(eventTitle);
 
   const html = `
