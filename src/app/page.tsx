@@ -35,6 +35,7 @@ export default function CreatePage() {
   const [notifyEnabled, setNotifyEnabled]     = useState(false);  // 通知機能ON/OFF
   const [notifyEmail, setNotifyEmail]         = useState('');     // 通知先メール
   const [notifyThreshold, setNotifyThreshold] = useState(3);      // 通知する人数
+  const [notifyDeadline, setNotifyDeadline]   = useState(true);   // 期限当日通知
 
   /* localStorageから履歴を読み込む（クライアントのみ） */
   useEffect(() => {
@@ -124,11 +125,11 @@ export default function CreatePage() {
       localStorage.setItem('yotei_history', JSON.stringify(history.slice(0, 20)));
 
       // 通知設定がある場合はサーバーに保存（メールを暗号化）
-      if (notifyEnabled && notifyEmail && notifyThreshold >= 1) {
+      if (notifyEnabled && notifyEmail) {
         await fetch('/api/notify-setup', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ eventId: ref.id, email: notifyEmail, threshold: notifyThreshold }),
+          body: JSON.stringify({ eventId: ref.id, email: notifyEmail, threshold: notifyThreshold, notifyDeadline }),
         }).catch(() => {/* 通知設定の失敗はイベント作成に影響させない */});
       }
 
@@ -384,7 +385,7 @@ export default function CreatePage() {
               </label>
               {notifyEnabled && (
                 <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginBottom: 0 }}>
                     <input
                       type="number"
                       min={1}
@@ -394,7 +395,16 @@ export default function CreatePage() {
                       style={{ width: 64, textAlign: 'center', fontWeight: 700 }}
                     />
                     <span style={{ fontSize: 14, color: 'var(--muted)' }}>人が回答したらメールで通知</span>
-                  </div>
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginBottom: 0 }}>
+                    <input
+                      type="checkbox"
+                      checked={notifyDeadline}
+                      onChange={e => setNotifyDeadline(e.target.checked)}
+                      style={{ width: 16, height: 16, cursor: 'pointer', accentColor: 'var(--indigo)' }}
+                    />
+                    <span style={{ fontSize: 14, color: 'var(--muted)' }}>回答期限日にメールで通知</span>
+                  </label>
                   <input
                     type="email"
                     placeholder="通知先メールアドレス"

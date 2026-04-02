@@ -11,7 +11,9 @@ export interface YoteiEvent {
   creatorName: string;
   createdAt?: Date;
   notifyThreshold?: number;       // N人回答で通知
-  notified?: boolean;             // 通知済みフラグ
+  notified?: boolean;             // N人通知済みフラグ
+  notifyDeadline?: boolean;       // 回答期限日に通知
+  deadlineNotified?: boolean;     // 期限通知済みフラグ
 }
 
 export interface Response {

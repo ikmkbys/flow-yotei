@@ -97,6 +97,9 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
   const [editDateError, setEditDateError] = useState('');
   const [showEarlyHours, setShowEarlyHours] = useState(false);  // 深夜帯時刻表示フラグ
   const [showForm, setShowForm]           = useState(true);    // 出欠フォーム折りたたみ
+  // 通知設定編集用state
+  const [editNotifyThreshold, setEditNotifyThreshold] = useState(3);
+  const [editNotifyDeadline, setEditNotifyDeadline]   = useState(false);
 
   /* イベント取得 */
   useEffect(() => {
@@ -125,6 +128,9 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
       }
       // 確定済みならフォームを閉じた状態で表示
       if (ev.confirmedDate) setShowForm(false);
+      // 通知設定の初期値
+      if (ev.notifyThreshold) setEditNotifyThreshold(ev.notifyThreshold);
+      if (ev.notifyDeadline !== undefined) setEditNotifyDeadline(ev.notifyDeadline);
       // localStorageで作成者判定
       const history = JSON.parse(localStorage.getItem('yotei_history') ?? '[]');
       setIsCreator(history.some((h: { id: string }) => h.id === id));
@@ -204,8 +210,20 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
       deadline:    newDeadline,
       dates:       newDates,
     });
+    // 通知設定が元々ある場合、変更があればPATCHで更新
+    if (event?.notifyThreshold !== undefined || event?.notifyDeadline !== undefined) {
+      const thresholdChanged = editNotifyThreshold !== (event?.notifyThreshold ?? 3);
+      const deadlineChanged  = editNotifyDeadline  !== (event?.notifyDeadline  ?? false);
+      if (thresholdChanged || deadlineChanged) {
+        fetch('/api/notify-setup', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ eventId: id, threshold: editNotifyThreshold, notifyDeadline: editNotifyDeadline }),
+        }).catch(() => {});
+      }
+    }
     // ローカルのeventも更新
-    setEvent(prev => prev ? { ...prev, title: editTitle, description: editDesc, eventUrl: editUrl, deadline: newDeadline ?? undefined, dates: newDates } : prev);
+    setEvent(prev => prev ? { ...prev, title: editTitle, description: editDesc, eventUrl: editUrl, deadline: newDeadline ?? undefined, dates: newDates, notifyThreshold: editNotifyThreshold, notifyDeadline: editNotifyDeadline } : prev);
     setEditSaving(false);
     setShowEdit(false);
   };
@@ -444,6 +462,33 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                 </div>
                 <p className="hint">既存の回答はそのまま保持されます</p>
               </div>
+
+              {/* 通知設定（設定済みの場合のみ表示） */}
+              {event?.notifyThreshold !== undefined && (
+                <div style={{ background: 'var(--bg2)', borderRadius: 10, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--muted)', margin: 0 }}>📧 回答通知</p>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginBottom: 0 }}>
+                    <input
+                      type="number"
+                      min={1}
+                      max={99}
+                      value={editNotifyThreshold}
+                      onChange={e => setEditNotifyThreshold(Math.max(1, parseInt(e.target.value) || 1))}
+                      style={{ width: 56, textAlign: 'center', fontWeight: 700, fontSize: 13 }}
+                    />
+                    <span style={{ fontSize: 13, color: 'var(--muted)' }}>人が回答したらメールで通知</span>
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginBottom: 0 }}>
+                    <input
+                      type="checkbox"
+                      checked={editNotifyDeadline}
+                      onChange={e => setEditNotifyDeadline(e.target.checked)}
+                      style={{ width: 15, height: 15, cursor: 'pointer', accentColor: 'var(--indigo)' }}
+                    />
+                    <span style={{ fontSize: 13, color: 'var(--muted)' }}>回答期限日にメールで通知</span>
+                  </label>
+                </div>
+              )}
 
               <button
                 className="btn btn-primary"
