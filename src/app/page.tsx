@@ -32,6 +32,9 @@ export default function CreatePage() {
   const [loading, setLoading] = useState(false);
   const [showHowTo, setShowHowTo] = useState(false);  // 使い方モーダル
   const [history, setHistory]   = useState<{ id: string; title: string; createdAt: number }[]>([]);
+  const [notifyEnabled, setNotifyEnabled]     = useState(false);  // 通知機能ON/OFF
+  const [notifyEmail, setNotifyEmail]         = useState('');     // 通知先メール
+  const [notifyThreshold, setNotifyThreshold] = useState(3);      // 通知する人数
 
   /* localStorageから履歴を読み込む（クライアントのみ） */
   useEffect(() => {
@@ -119,6 +122,15 @@ export default function CreatePage() {
       const history = JSON.parse(localStorage.getItem('yotei_history') ?? '[]');
       history.unshift({ id: ref.id, title, createdAt: Date.now() });
       localStorage.setItem('yotei_history', JSON.stringify(history.slice(0, 20)));
+
+      // 通知設定がある場合はサーバーに保存（メールを暗号化）
+      if (notifyEnabled && notifyEmail && notifyThreshold >= 1) {
+        await fetch('/api/notify-setup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ eventId: ref.id, email: notifyEmail, threshold: notifyThreshold }),
+        }).catch(() => {/* 通知設定の失敗はイベント作成に影響させない */});
+      }
 
       router.push(`/${ref.id}`);  // 作成後イベントページへ
     } catch (err) {
@@ -359,11 +371,50 @@ export default function CreatePage() {
               <p className="hint">イベント作成者として表示されます</p>
             </div>
 
+            {/* 回答通知（オプション） */}
+            <div style={{ background: 'var(--bg2)', borderRadius: 10, padding: '14px 16px' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginBottom: 0, fontWeight: 600 }}>
+                <input
+                  type="checkbox"
+                  checked={notifyEnabled}
+                  onChange={e => setNotifyEnabled(e.target.checked)}
+                  style={{ width: 16, height: 16, cursor: 'pointer', accentColor: 'var(--indigo)' }}
+                />
+                📧 回答通知を受け取る（任意）
+              </label>
+              {notifyEnabled && (
+                <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <input
+                      type="number"
+                      min={1}
+                      max={99}
+                      value={notifyThreshold}
+                      onChange={e => setNotifyThreshold(Math.max(1, parseInt(e.target.value) || 1))}
+                      style={{ width: 64, textAlign: 'center', fontWeight: 700 }}
+                    />
+                    <span style={{ fontSize: 14, color: 'var(--muted)' }}>人が回答したらメールで通知</span>
+                  </div>
+                  <input
+                    type="email"
+                    placeholder="通知先メールアドレス"
+                    value={notifyEmail}
+                    onChange={e => setNotifyEmail(e.target.value)}
+                    required={notifyEnabled}
+                    style={{ fontSize: 14 }}
+                  />
+                  <p className="hint" style={{ margin: 0 }}>
+                    メールアドレスは暗号化して保存されます。他の参加者には表示されません。
+                  </p>
+                </div>
+              )}
+            </div>
+
             {/* 送信 */}
             <button
               type="submit"
               className="btn btn-primary"
-              disabled={loading || !title || !creatorName || dates.length === 0}
+              disabled={loading || !title || !creatorName || dates.length === 0 || (notifyEnabled && !notifyEmail)}
               style={{ justifyContent: 'center', marginTop: 4 }}
             >
               {loading ? '作成中...' : '✦ イベントを作成する'}

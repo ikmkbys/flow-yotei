@@ -169,6 +169,9 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
         createdAt: Timestamp.now(),
       });
       setMyResponseId(ref.id);  // 次回編集用にIDを保持
+
+      // 通知設定があれば閾値チェック（失敗してもUI影響なし）
+      fetch(`/api/notify/${id}`, { method: 'POST' }).catch(() => {});
     }
 
     setSubmitted(true);

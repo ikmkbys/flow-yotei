@@ -10,6 +10,8 @@ export interface YoteiEvent {
   dates: string[];            // ISO date strings: "2026-03-27" or "2026-03-27T14:00"
   creatorName: string;
   createdAt?: Date;
+  notifyThreshold?: number;       // N人回答で通知
+  notified?: boolean;             // 通知済みフラグ
 }
 
 export interface Response {
