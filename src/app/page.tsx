@@ -31,6 +31,8 @@ export default function CreatePage() {
   const [calMonth, setCalMonth] = useState(() => new Date().getMonth()); // 0-indexed
   const [loading, setLoading] = useState(false);
   const [showHowTo, setShowHowTo] = useState(false);  // 使い方モーダル
+  const [isDragging, setIsDragging]   = useState(false);            // ドラッグ中フラグ
+  const [dragAction, setDragAction]   = useState<'add' | 'remove'>('add'); // ドラッグ操作種別
   const [history, setHistory]   = useState<{ id: string; title: string; createdAt: number }[]>([]);
   const [notifyEnabled, setNotifyEnabled]     = useState(false);  // 通知機能ON/OFF
   const [notifyEmail, setNotifyEmail]         = useState('');     // 通知先メール
@@ -42,6 +44,42 @@ export default function CreatePage() {
     const saved = JSON.parse(localStorage.getItem('yotei_history') ?? '[]');
     setHistory(saved);
   }, []);
+
+  /* ドラッグ終了をwindow全体で検知 */
+  useEffect(() => {
+    const stop = () => setIsDragging(false);
+    window.addEventListener('mouseup', stop);
+    return () => window.removeEventListener('mouseup', stop);
+  }, []);
+
+  /* ドラッグ中のセルへの適用 */
+  const applyDrag = (dateStr: string, action: 'add' | 'remove') => {
+    if (action === 'add') {
+      setDates(prev => {
+        if (prev.some(d => d.date === dateStr && d.time === sharedTime)) return prev;
+        return [...prev, { date: dateStr, time: sharedTime }]
+          .sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')));
+      });
+    } else {
+      setDates(prev => prev.filter(d => !(d.date === dateStr && d.time === sharedTime)));
+    }
+  };
+
+  /* ドラッグ開始（クリック単体もこれで処理） */
+  const startDrag = (day: number) => {
+    const dateStr = toDateStr(day);
+    const isSelected = dates.some(d => d.date === dateStr && d.time === sharedTime);
+    const action = isSelected ? 'remove' : 'add';
+    setIsDragging(true);
+    setDragAction(action);
+    applyDrag(dateStr, action);
+  };
+
+  /* ドラッグ継続（マウスが他のセルに入ったとき） */
+  const continueDrag = (day: number) => {
+    if (!isDragging) return;
+    applyDrag(toDateStr(day), dragAction);
+  };
 
   /* カレンダーグリッド生成（null=空セル） */
   const getCalendarDays = (year: number, month: number): (number | null)[] => {
@@ -309,7 +347,9 @@ export default function CreatePage() {
                       <button
                         key={i}
                         type="button"
-                        onClick={() => toggleCalendarDate(day)}
+                        onMouseDown={e => { e.preventDefault(); startDrag(day); }}
+                        onMouseEnter={() => continueDrag(day)}
+                        draggable={false}
                         title={partial ? '別の時刻で登録済み（クリックで現在の共通時刻を追加）' : undefined}
                         style={{
                           aspectRatio: '1',
@@ -318,6 +358,7 @@ export default function CreatePage() {
                           background: bg, color, border,
                           borderRadius: 8, cursor: 'pointer',
                           transition: 'all 0.12s',
+                          userSelect: 'none',
                         }}
                       >
                         {day}
