@@ -109,6 +109,11 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
       if (!snap.exists()) { setNotFound(true); return; }
       const data = snap.data();
       const ev = { id: snap.id, ...data } as YoteiEvent;
+      // 旧 confirmedDate（単一文字列）→ confirmedDates（配列）へ移行
+      if (!ev.confirmedDates && ev.confirmedDate) {
+        ev.confirmedDates = [ev.confirmedDate];
+      }
+      ev.confirmedDates = ev.confirmedDates ?? [];
       setEvent(ev);
       // デフォルト全て○
       const init: Record<string, Availability> = {};
@@ -129,7 +134,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
         setEditDeadlineTime(dTime === '23:59' ? '' : dTime);
       }
       // 確定済みならフォームを閉じた状態で表示
-      if (ev.confirmedDate) setShowForm(false);
+      if ((ev.confirmedDates?.length ?? 0) > 0) setShowForm(false);
       // 通知設定の初期値
       if (ev.notifyThreshold) setEditNotifyThreshold(ev.notifyThreshold);
       if (ev.notifyDeadline !== undefined) setEditNotifyDeadline(ev.notifyDeadline);
@@ -253,11 +258,14 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
     return new Set(keys).size !== keys.length;
   };
 
-  /* 日程を確定する */
+  /* 日程を確定する（複数選択トグル） */
   const handleConfirm = async (date: string) => {
-    const next = event?.confirmedDate === date ? null : date;  // 同じ日を押したら解除
-    await updateDoc(doc(db, 'events', id), { confirmedDate: next });
-    setEvent(prev => prev ? { ...prev, confirmedDate: next ?? undefined } : prev);
+    const current = event?.confirmedDates ?? [];
+    const next = current.includes(date)
+      ? current.filter(d => d !== date)   // すでに確定済み → 解除
+      : [...current, date];               // 未確定 → 追加
+    await updateDoc(doc(db, 'events', id), { confirmedDates: next });
+    setEvent(prev => prev ? { ...prev, confirmedDates: next } : prev);
   };
 
   /* 必須参加者をトグル（localStorage に保存） */
@@ -515,43 +523,46 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
           </div>
         )}
 
-        {/* 確定日程バナー */}
-        {event.confirmedDate && (
+        {/* 確定日程バナー（複数対応） */}
+        {(event.confirmedDates?.length ?? 0) > 0 && (
           <div style={{
             background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)',
             borderRadius: 14, padding: '20px 24px', marginBottom: 24,
-            display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap',
           }}>
-            <span style={{ fontSize: 32 }}>🎉</span>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.7)', letterSpacing: '0.08em', marginBottom: 4 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: event.confirmedDates!.length > 1 ? 12 : 0 }}>
+              <span style={{ fontSize: 32 }}>🎉</span>
+              <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.7)', letterSpacing: '0.08em', margin: 0 }}>
                 開催日程が確定しました
               </p>
-              <p style={{ fontSize: 20, fontWeight: 800, color: '#fff', letterSpacing: '-0.3px' }}>
-                {formatDate(event.confirmedDate)}
-              </p>
             </div>
-            <a
-              href={makeGCalUrl(
-                event.confirmedDate,
-                event.title,
-                [event.description, event.eventUrl ? `🔗 ${event.eventUrl}` : ''].filter(Boolean).join('\n\n') || undefined,
-              )}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: 6,
-                padding: '8px 16px', borderRadius: 20,
-                background: 'rgba(255,255,255,0.2)', color: '#fff',
-                fontSize: 13, fontWeight: 700, textDecoration: 'none',
-                border: '1.5px solid rgba(255,255,255,0.4)',
-                backdropFilter: 'blur(4px)',
-                transition: 'background 0.2s',
-                flexShrink: 0,
-              }}
-            >
-              📅 カレンダーに追加
-            </a>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {event.confirmedDates!.map(date => (
+                <div key={date} style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                  <p style={{ fontSize: 18, fontWeight: 800, color: '#fff', letterSpacing: '-0.3px', flex: 1, margin: 0 }}>
+                    {formatDate(date)}
+                  </p>
+                  <a
+                    href={makeGCalUrl(
+                      date,
+                      event.title,
+                      [event.description, event.eventUrl ? `🔗 ${event.eventUrl}` : ''].filter(Boolean).join('\n\n') || undefined,
+                    )}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 6,
+                      padding: '6px 14px', borderRadius: 20,
+                      background: 'rgba(255,255,255,0.2)', color: '#fff',
+                      fontSize: 12, fontWeight: 700, textDecoration: 'none',
+                      border: '1.5px solid rgba(255,255,255,0.4)',
+                      backdropFilter: 'blur(4px)', flexShrink: 0,
+                    }}
+                  >
+                    📅 カレンダーに追加
+                  </a>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
@@ -585,14 +596,14 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
 
         {/* 回答フォーム */}
         {(() => {
-          const isClosed = !!event.confirmedDate || (event.deadline ? new Date() > new Date(event.deadline) : false);
+          const isClosed = (event.confirmedDates?.length ?? 0) > 0 || (event.deadline ? new Date() > new Date(event.deadline) : false);
           return !submitted ? (
           <div className="card" style={{ marginBottom: 24 }}>
             {/* ヘッダー：タイトル＋折りたたみボタン */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: showForm ? 16 : 0 }}>
               <div>
                 <p className="section-title" style={{ marginBottom: 0 }}>📅 出欠を入力</p>
-                {event.confirmedDate && (
+                {(event.confirmedDates?.length ?? 0) > 0 && (
                   <p style={{ fontSize: 12, color: 'var(--red)', marginTop: 4, marginBottom: 0 }}>
                     スケジュール確定しているため入力できません。
                   </p>
@@ -814,12 +825,12 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                   style={{
                     flexShrink: 0, fontSize: 11, fontWeight: 700,
                     padding: '4px 10px', borderRadius: 20, cursor: 'pointer', border: 'none',
-                    background: event.confirmedDate === r.date ? '#4f46e5' : 'var(--bg3)',
-                    color: event.confirmedDate === r.date ? '#fff' : 'var(--muted)',
+                    background: event.confirmedDates?.includes(r.date) ? '#4f46e5' : 'var(--bg3)',
+                    color: event.confirmedDates?.includes(r.date) ? '#fff' : 'var(--muted)',
                     transition: 'all 0.2s',
                   }}
                 >
-                  {event.confirmedDate === r.date ? '✓ 確定中' : '確定する'}
+                  {event.confirmedDates?.includes(r.date) ? '✓ 確定中' : '確定する'}
                 </button>
               )}
             </div>
@@ -928,16 +939,16 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                     {responses.map(r => (
                       <th
                         key={r.id}
-                        onClick={() => !event.confirmedDate && handleSelectResponse(r)}
-                        title={event.confirmedDate ? undefined : 'クリックして回答を変更'}
+                        onClick={() => !(event.confirmedDates?.length) && handleSelectResponse(r)}
+                        title={event.confirmedDates?.length ? undefined : 'クリックして回答を変更'}
                         style={{
-                          cursor: event.confirmedDate ? 'default' : 'pointer',
+                          cursor: event.confirmedDates?.length ? 'default' : 'pointer',
                           color: myResponseId === r.id ? 'var(--indigo)' : undefined,
-                          textDecoration: event.confirmedDate ? 'none' : 'underline dotted',
+                          textDecoration: event.confirmedDates?.length ? 'none' : 'underline dotted',
                           userSelect: 'none',
                         }}
                       >
-                        {r.name}{!event.confirmedDate && ' ✏️'}
+                        {r.name}{!event.confirmedDates?.length && ' ✏️'}
                       </th>
                     ))}
                     {/* 最右：集計列 */}
