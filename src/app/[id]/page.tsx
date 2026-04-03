@@ -100,6 +100,8 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
   // 通知設定編集用state
   const [editNotifyThreshold, setEditNotifyThreshold] = useState(3);
   const [editNotifyDeadline, setEditNotifyDeadline]   = useState(false);
+  const [requiredNames, setRequiredNames]             = useState<string[]>([]);  // 必須参加者名（作成者のみ・localStorage）
+  const [showRequiredPanel, setShowRequiredPanel]     = useState(false);          // 必須参加者設定パネル
 
   /* イベント取得 */
   useEffect(() => {
@@ -134,6 +136,8 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
       // localStorageで作成者判定
       const history = JSON.parse(localStorage.getItem('yotei_history') ?? '[]');
       setIsCreator(history.some((h: { id: string }) => h.id === id));
+      const savedRequired = JSON.parse(localStorage.getItem(`yotei_required_${id}`) ?? '[]');
+      setRequiredNames(savedRequired);
     });
   }, [id]);
 
@@ -254,6 +258,15 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
     const next = event?.confirmedDate === date ? null : date;  // 同じ日を押したら解除
     await updateDoc(doc(db, 'events', id), { confirmedDate: next });
     setEvent(prev => prev ? { ...prev, confirmedDate: next ?? undefined } : prev);
+  };
+
+  /* 必須参加者をトグル（localStorage に保存） */
+  const toggleRequired = (name: string) => {
+    const next = requiredNames.includes(name)
+      ? requiredNames.filter(n => n !== name)
+      : [...requiredNames, name];
+    setRequiredNames(next);
+    localStorage.setItem(`yotei_required_${id}`, JSON.stringify(next));
   };
 
   /* 名前クリック → その人の回答をフォームに読み込んで編集モードへ */
@@ -709,7 +722,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
 
         {/* 候補日サマリ */}
         {responses.length > 0 && event && (() => {
-          // 日付ごとに ○数・△数・×数を集計してスコア順に並べる
+          // 人数別ランキング
           const ranked = [...event.dates]
             .map(date => ({
               date,
@@ -717,67 +730,177 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
               maybe: countAvail(responses, date, '△'),
               ng:    countAvail(responses, date, '×'),
             }))
-            .sort((a, b) => b.ok - a.ok || a.ng - b.ng)  // ○多い順 → ×少ない順
-            .slice(0, 3);                                  // 上位3件のみ
+            .sort((a, b) => b.ok - a.ok || a.ng - b.ng)
+            .slice(0, 3);
 
-          const best = ranked[0];  // 最有力日程
+          // 必須参加者別ランキング（作成者・設定済み時のみ）
+          const reqResponses = responses.filter(r => requiredNames.includes(r.name));
+          const reqTotal = reqResponses.length;
+          const rankedReq = isCreator && reqTotal > 0
+            ? [...event.dates]
+                .map(date => ({
+                  date,
+                  reqOk:    reqResponses.filter(r => r.availability[date] === '○').length,
+                  reqMaybe: reqResponses.filter(r => r.availability[date] === '△').length,
+                  reqNg:    reqResponses.filter(r => r.availability[date] === '×').length,
+                  ok:       countAvail(responses, date, '○'),
+                }))
+                .sort((a, b) =>
+                  b.reqOk - a.reqOk ||        // 必須○多い順
+                  b.reqMaybe - a.reqMaybe ||   // 同率なら必須△多い順
+                  b.ok - a.ok                  // それでも同率なら全体○多い順
+                )
+                .slice(0, 3)
+            : [];
 
-          return (
-            <div className="card" style={{ borderColor: 'var(--indigo)', background: 'var(--indigo-soft)' }}>
-              <p className="section-title" style={{ marginBottom: 12 }}>🏆 候補日サマリ</p>
-              {ranked.map((r, i) => (
-                <div key={r.date} style={{
-                  display: 'flex', alignItems: 'center', gap: 12,
-                  padding: '10px 0',
-                  borderBottom: i < ranked.length - 1 ? '1px solid var(--border)' : 'none',
-                }}>
-                  {/* 順位バッジ */}
-                  <span style={{
-                    width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: 13, fontWeight: 700,
-                    background: i === 0 ? '#f59e0b' : i === 1 ? '#94a3b8' : i === 2 ? '#b45309' : 'var(--bg3)',
-                    color: i <= 2 ? '#fff' : 'var(--muted)',
-                  }}>
-                    {i + 1}
+          const BADGE_COLORS = ['#f59e0b', '#94a3b8', '#b45309'];
+
+          const SummaryRow = ({
+            r, i, rankList, accentColor, showConfirm,
+          }: {
+            r: { date: string; ok: number; maybe?: number; ng?: number; reqOk?: number; reqMaybe?: number; reqNg?: number };
+            i: number;
+            rankList: unknown[];
+            accentColor: string;
+            showConfirm: boolean;
+          }) => (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 12,
+              padding: '10px 0',
+              borderBottom: i < rankList.length - 1 ? '1px solid var(--border)' : 'none',
+            }}>
+              <span style={{
+                width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 13, fontWeight: 700,
+                background: BADGE_COLORS[i] ?? 'var(--bg3)',
+                color: '#fff',
+              }}>
+                {i + 1}
+              </span>
+              <span style={{
+                flex: 1, fontWeight: i === 0 ? 700 : 500,
+                color: i === 0 ? 'var(--text)' : 'var(--muted)',
+                fontSize: i === 0 ? 15 : 14,
+              }}>
+                {formatDate(r.date)}
+                {i === 0 && (
+                  <span style={{ marginLeft: 8, fontSize: 11, color: accentColor, fontWeight: 700 }}>
+                    ◀ 最有力
                   </span>
-                  {/* 日付 */}
-                  <span style={{
-                    flex: 1, fontWeight: i === 0 ? 700 : 500,
-                    color: i === 0 ? 'var(--text)' : 'var(--muted)',
-                    fontSize: i === 0 ? 15 : 14,
-                  }}>
-                    {formatDate(r.date)}
-                    {r.date === best.date && (
-                      <span style={{ marginLeft: 8, fontSize: 11, color: '#f59e0b', fontWeight: 700 }}>
-                        ◀ 最有力
-                      </span>
-                    )}
-                  </span>
-                  {/* 集計バッジ */}
-                  <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                )}
+              </span>
+              <div style={{ display: 'flex', gap: 6, flexShrink: 0, flexDirection: 'column', alignItems: 'flex-end' }}>
+                {r.reqOk !== undefined ? (
+                  <>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: accentColor }}>
+                      必須 {Math.round((r.reqOk / reqTotal) * 100)}%
+                    </span>
+                    <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+                      ○{r.reqOk} △{r.reqMaybe} ×{r.reqNg}　全体○{r.ok}
+                    </span>
+                  </>
+                ) : (
+                  <div style={{ display: 'flex', gap: 6 }}>
                     <span style={{ fontSize: 12, fontWeight: 700, color: '#16a34a' }}>○{r.ok}</span>
                     <span style={{ fontSize: 12, fontWeight: 700, color: '#ca8a04' }}>△{r.maybe}</span>
                     <span style={{ fontSize: 12, fontWeight: 700, color: '#dc2626' }}>×{r.ng}</span>
                   </div>
-                  {/* 確定ボタン（作成者のみ） */}
-                  {isCreator && (
+                )}
+              </div>
+              {showConfirm && (
+                <button
+                  onClick={() => handleConfirm(r.date)}
+                  style={{
+                    flexShrink: 0, fontSize: 11, fontWeight: 700,
+                    padding: '4px 10px', borderRadius: 20, cursor: 'pointer', border: 'none',
+                    background: event.confirmedDate === r.date ? '#4f46e5' : 'var(--bg3)',
+                    color: event.confirmedDate === r.date ? '#fff' : 'var(--muted)',
+                    transition: 'all 0.2s',
+                  }}
+                >
+                  {event.confirmedDate === r.date ? '✓ 確定中' : '確定する'}
+                </button>
+              )}
+            </div>
+          );
+
+          return (
+            <>
+              {/* 人数別サマリ */}
+              <div className="card" style={{ borderColor: 'var(--indigo)', background: 'var(--indigo-soft)', marginBottom: 16 }}>
+                <p className="section-title" style={{ marginBottom: 12 }}>🏆 候補日サマリ（人数別）</p>
+                {ranked.map((r, i) => (
+                  <SummaryRow key={r.date} r={r} i={i} rankList={ranked} accentColor="#f59e0b" showConfirm={isCreator && rankedReq.length === 0} />
+                ))}
+              </div>
+
+              {/* 必須参加者設定パネル（作成者のみ） */}
+              {isCreator && (
+                <div className="card" style={{ marginBottom: 16 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <p className="section-title" style={{ marginBottom: 0 }}>
+                      ⭐ 必須参加者
+                      {requiredNames.length > 0 && (
+                        <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--indigo)', fontWeight: 400 }}>
+                          {requiredNames.length}名設定中
+                        </span>
+                      )}
+                    </p>
                     <button
-                      onClick={() => handleConfirm(r.date)}
-                      style={{
-                        flexShrink: 0, fontSize: 11, fontWeight: 700,
-                        padding: '4px 10px', borderRadius: 20, cursor: 'pointer', border: 'none',
-                        background: event.confirmedDate === r.date ? '#4f46e5' : 'var(--bg3)',
-                        color: event.confirmedDate === r.date ? '#fff' : 'var(--muted)',
-                        transition: 'all 0.2s',
-                      }}
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => setShowRequiredPanel(v => !v)}
+                      style={{ fontSize: 13 }}
                     >
-                      {event.confirmedDate === r.date ? '✓ 確定中' : '確定する'}
+                      {showRequiredPanel ? '▲ 閉じる' : '▼ 設定する'}
                     </button>
+                  </div>
+                  {showRequiredPanel && (
+                    <div style={{ marginTop: 12 }}>
+                      <p style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>
+                        必須参加者を選ぶと、参加率別の候補日サマリが表示されます。この設定はあなたにのみ表示されます。
+                      </p>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                        {responses.map(r => {
+                          const isReq = requiredNames.includes(r.name);
+                          return (
+                            <button
+                              key={r.id}
+                              type="button"
+                              onClick={() => toggleRequired(r.name)}
+                              style={{
+                                padding: '6px 14px', borderRadius: 20, fontSize: 13, fontWeight: 600,
+                                cursor: 'pointer',
+                                border: `1.5px solid ${isReq ? 'var(--indigo)' : 'var(--border)'}`,
+                                background: isReq ? 'var(--indigo)' : 'var(--bg)',
+                                color: isReq ? '#fff' : 'var(--muted)',
+                                transition: 'all 0.15s',
+                              }}
+                            >
+                              {isReq ? '⭐ ' : ''}{r.name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
                   )}
                 </div>
-              ))}
-            </div>
+              )}
+
+              {/* 必須参加者別サマリ（作成者・必須設定時のみ） */}
+              {isCreator && rankedReq.length > 0 && (
+                <div className="card" style={{ borderColor: '#f59e0b', background: '#fffbeb', marginBottom: 16 }}>
+                  <p className="section-title" style={{ marginBottom: 4 }}>⭐ 候補日サマリ（必須参加者別）</p>
+                  <p style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
+                    必須参加者 {reqTotal}名の参加率順
+                  </p>
+                  {rankedReq.map((r, i) => (
+                    <SummaryRow key={r.date} r={r} i={i} rankList={rankedReq} accentColor="#f59e0b" showConfirm={true} />
+                  ))}
+                </div>
+              )}
+            </>
           );
         })()}
 
