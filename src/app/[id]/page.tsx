@@ -102,6 +102,8 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
   const [editNotifyDeadline, setEditNotifyDeadline]   = useState(false);
   const [requiredNames, setRequiredNames]             = useState<string[]>([]);  // 必須参加者名（作成者のみ・localStorage）
   const [showRequiredPanel, setShowRequiredPanel]     = useState(false);          // 必須参加者設定パネル
+  const [showAllRanked, setShowAllRanked]             = useState(false);          // 人数別サマリ全件表示
+  const [showAllRankedReq, setShowAllRankedReq]       = useState(false);          // 必須参加者別サマリ全件表示
 
   /* イベント取得 */
   useEffect(() => {
@@ -741,8 +743,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
               maybe: countAvail(responses, date, '△'),
               ng:    countAvail(responses, date, '×'),
             }))
-            .sort((a, b) => b.ok - a.ok || a.ng - b.ng)
-            .slice(0, 3);
+            .sort((a, b) => b.ok - a.ok || a.ng - b.ng);
 
           // 必須参加者別ランキング（作成者・設定済み時のみ）
           const reqResponses = responses.filter(r => requiredNames.includes(r.name));
@@ -761,8 +762,9 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                   b.reqMaybe - a.reqMaybe ||   // 同率なら必須△多い順
                   b.ok - a.ok                  // それでも同率なら全体○多い順
                 )
-                .slice(0, 3)
             : [];
+
+          const DEFAULT_SHOW = 3;
 
           const BADGE_COLORS = ['#f59e0b', '#94a3b8', '#b45309'];
 
@@ -841,9 +843,22 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
               {/* 人数別サマリ */}
               <div className="card" style={{ borderColor: 'var(--indigo)', background: 'var(--indigo-soft)', marginBottom: 16 }}>
                 <p className="section-title" style={{ marginBottom: 12 }}>🏆 候補日サマリ（人数別）</p>
-                {ranked.map((r, i) => (
-                  <SummaryRow key={r.date} r={r} i={i} rankList={ranked} accentColor="#f59e0b" showConfirm={isCreator && rankedReq.length === 0} />
+                {(showAllRanked ? ranked : ranked.slice(0, DEFAULT_SHOW)).map((r, i) => (
+                  <SummaryRow key={r.date} r={r} i={i} rankList={showAllRanked ? ranked : ranked.slice(0, DEFAULT_SHOW)} accentColor="#f59e0b" showConfirm={isCreator && rankedReq.length === 0} />
                 ))}
+                {ranked.length > DEFAULT_SHOW && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllRanked(v => !v)}
+                    style={{
+                      display: 'block', width: '100%', marginTop: 8, padding: '8px 0',
+                      background: 'none', border: 'none', cursor: 'pointer',
+                      fontSize: 13, fontWeight: 600, color: 'var(--indigo)',
+                    }}
+                  >
+                    {showAllRanked ? '▲ 上位3件のみ表示' : `▼ すべて表示（${ranked.length}件）`}
+                  </button>
+                )}
               </div>
 
               {/* 必須参加者設定パネル（作成者のみ） */}
@@ -906,9 +921,22 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                   <p style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
                     必須参加者 {reqTotal}名の参加率順
                   </p>
-                  {rankedReq.map((r, i) => (
-                    <SummaryRow key={r.date} r={r} i={i} rankList={rankedReq} accentColor="#f59e0b" showConfirm={true} />
+                  {(showAllRankedReq ? rankedReq : rankedReq.slice(0, DEFAULT_SHOW)).map((r, i) => (
+                    <SummaryRow key={r.date} r={r} i={i} rankList={showAllRankedReq ? rankedReq : rankedReq.slice(0, DEFAULT_SHOW)} accentColor="#f59e0b" showConfirm={true} />
                   ))}
+                  {rankedReq.length > DEFAULT_SHOW && (
+                    <button
+                      type="button"
+                      onClick={() => setShowAllRankedReq(v => !v)}
+                      style={{
+                        display: 'block', width: '100%', marginTop: 8, padding: '8px 0',
+                        background: 'none', border: 'none', cursor: 'pointer',
+                        fontSize: 13, fontWeight: 600, color: '#b45309',
+                      }}
+                    >
+                      {showAllRankedReq ? '▲ 上位3件のみ表示' : `▼ すべて表示（${rankedReq.length}件）`}
+                    </button>
+                  )}
                 </div>
               )}
             </>
