@@ -38,6 +38,7 @@ export default function CreatePage() {
   const [notifyEmail, setNotifyEmail]         = useState('');     // 通知先メール
   const [notifyThreshold, setNotifyThreshold] = useState(3);      // 通知する人数
   const [notifyDeadline, setNotifyDeadline]   = useState(true);   // 期限当日通知
+  const [attempted, setAttempted]             = useState(false);  // 送信試行済みフラグ
 
   /* localStorageから履歴を読み込む（クライアントのみ） */
   useEffect(() => {
@@ -142,7 +143,8 @@ export default function CreatePage() {
     const validDates = dates
       .filter(d => { const k = `${d.date}_${d.time}`; if (seen.has(k)) return false; seen.add(k); return true; })
       .map(d => d.time ? `${d.date}T${d.time}` : d.date);
-    if (!title || !creatorName || validDates.length === 0) return;
+    setAttempted(true);
+    if (!title || !creatorName || validDates.length === 0 || (notifyEnabled && !notifyEmail)) return;
     setLoading(true);
     try {
       const ref = await addDoc(collection(db, 'events'), {
@@ -209,7 +211,7 @@ export default function CreatePage() {
 
         {/* Form */}
         <div className="card">
-          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+          <form onSubmit={handleSubmit} noValidate style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
             {/* タイトル */}
             <div>
@@ -221,7 +223,9 @@ export default function CreatePage() {
                 value={title}
                 onChange={e => setTitle(e.target.value)}
                 required
+                className={attempted && !title ? 'input-error' : ''}
               />
+              {attempted && !title && <p className="error-msg">イベント名を入力してください</p>}
             </div>
 
             {/* メモ */}
@@ -368,6 +372,7 @@ export default function CreatePage() {
                 </div>
               </div>
               <p className="hint" style={{ marginTop: 6 }}>日付をクリックで追加／もう一度クリックで削除</p>
+              {attempted && dates.length === 0 && <p className="error-msg">日程候補を1つ以上選択してください</p>}
 
               {/* 選択済み日程リスト */}
               {dates.length > 0 && (
@@ -409,8 +414,11 @@ export default function CreatePage() {
                 value={creatorName}
                 onChange={e => setCreatorName(e.target.value)}
                 required
+                className={attempted && !creatorName ? 'input-error' : ''}
               />
-              <p className="hint">イベント作成者として表示されます</p>
+              {attempted && !creatorName
+                ? <p className="error-msg">お名前を入力してください</p>
+                : <p className="hint">イベント作成者として表示されます</p>}
             </div>
 
             {/* 回答通知（オプション） */}
@@ -465,7 +473,7 @@ export default function CreatePage() {
             <button
               type="submit"
               className="btn btn-primary"
-              disabled={loading || !title || !creatorName || dates.length === 0 || (notifyEnabled && !notifyEmail)}
+              disabled={loading}
               style={{ justifyContent: 'center', marginTop: 4 }}
             >
               {loading ? '作成中...' : '✦ イベントを作成する'}
