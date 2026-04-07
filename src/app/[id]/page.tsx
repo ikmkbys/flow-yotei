@@ -457,6 +457,44 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
       </header>
       {showHowTo && <HowToModal mode="respond" onClose={() => setShowHowTo(false)} />}
 
+      {/* アンカーナビゲーションバー */}
+      <div style={{
+        position: 'sticky', top: 0, zIndex: 100,
+        background: 'var(--bg)', borderBottom: '1px solid var(--border)',
+        padding: '0 16px',
+      }}>
+        <div style={{ maxWidth: 560, margin: '0 auto', display: 'flex', gap: 0 }}>
+          {[
+            { href: '#form',    label: '📝 回答する' },
+            { href: '#summary', label: '📊 集計を見る' },
+          ].map(({ href, label }) => (
+            <a
+              key={href}
+              href={href}
+              style={{
+                display: 'inline-block',
+                padding: '10px 16px',
+                fontSize: 13, fontWeight: 600,
+                color: 'var(--muted)',
+                textDecoration: 'none',
+                borderBottom: '2px solid transparent',
+                transition: 'color 0.15s, border-color 0.15s',
+              }}
+              onMouseEnter={e => {
+                (e.currentTarget as HTMLAnchorElement).style.color = 'var(--indigo)';
+                (e.currentTarget as HTMLAnchorElement).style.borderBottomColor = 'var(--indigo)';
+              }}
+              onMouseLeave={e => {
+                (e.currentTarget as HTMLAnchorElement).style.color = 'var(--muted)';
+                (e.currentTarget as HTMLAnchorElement).style.borderBottomColor = 'transparent';
+              }}
+            >
+              {label}
+            </a>
+          ))}
+        </div>
+      </div>
+
       <main className="container" style={{ paddingTop: 32, paddingBottom: 60 }}>
 
         {/* イベント情報 */}
@@ -798,7 +836,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
         {(() => {
           const isClosed = (event.confirmedDates?.length ?? 0) > 0 || (event.deadline ? new Date() > new Date(event.deadline) : false);
           return !submitted ? (
-          <div className="card" style={{ marginBottom: 24 }}>
+          <div id="form" className="card" style={{ marginBottom: 24 }}>
             {/* ヘッダー：タイトル＋折りたたみボタン */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: showForm ? 16 : 0 }}>
               <div>
@@ -962,6 +1000,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
         })()}
 
         {/* 候補日サマリ */}
+        <div id="summary" />
         {responses.length > 0 && event && (() => {
           // 人数別ランキング
           const ranked = [...event.dates]
