@@ -51,8 +51,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signInWithGoogle = useCallback(async () => {
     const result = await signInWithPopup(auth, makeProvider());
     const credential = GoogleAuthProvider.credentialFromResult(result);
-    console.debug('[Auth] credential:', credential);
-    console.debug('[Auth] accessToken:', credential?.accessToken ?? 'null');
+    console.log('[Auth] credential:', credential);
+    console.log('[Auth] accessToken:', credential?.accessToken ?? 'null');
     if (credential?.accessToken) setGoogleAccessToken(credential.accessToken);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -60,8 +60,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const refreshToken = useCallback(async () => {
     const result = await signInWithPopup(auth, makeProvider());
     const credential = GoogleAuthProvider.credentialFromResult(result);
-    console.debug('[Auth] refreshToken credential:', credential);
-    console.debug('[Auth] refreshToken accessToken:', credential?.accessToken ?? 'null');
+    console.log('[Auth] refreshToken credential:', credential);
+    console.log('[Auth] refreshToken accessToken:', credential?.accessToken ?? 'null');
     if (credential?.accessToken) {
       setGoogleAccessToken(credential.accessToken);
       return credential.accessToken;
