@@ -28,6 +28,8 @@ export async function fetchFreeBusy(
   });
 
   if (!res.ok) {
+    const errBody = await res.json().catch(() => ({}));
+    console.log('[Calendar] FreeBusy error body:', JSON.stringify(errBody));
     if (res.status === 401) throw new Error('TOKEN_EXPIRED');
     throw new Error(`FreeBusy API error: ${res.status}`);
   }
