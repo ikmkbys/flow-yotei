@@ -119,7 +119,16 @@ export default function HowToModal({ mode, onClose }: Props) {
         </div>
 
         {/* フッター */}
-        <div style={{ marginTop: 28, textAlign: 'center' }}>
+        <div style={{ marginTop: 28, display: 'flex', gap: 10, justifyContent: 'center' }}>
+          <a
+            href="/help"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn btn-ghost"
+            style={{ minWidth: 120, textDecoration: 'none', textAlign: 'center' }}
+          >
+            もっと詳しく
+          </a>
           <button
             onClick={onClose}
             className="btn btn-primary"
