@@ -1171,6 +1171,10 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
             まだ回答がありません。URLを共有して回答を集めましょう。
           </div>
         )}
+
+        <p style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 12, marginTop: 32 }}>
+          <a href="/" style={{ color: 'var(--indigo)' }}>FLOW YOTEI</a> · <a href="/help" style={{ color: 'var(--muted)' }}>ヘルプ</a> · <a href="/privacy" style={{ color: 'var(--muted)' }}>プライバシーポリシー</a> · <a href="/terms" style={{ color: 'var(--muted)' }}>利用規約</a>
+        </p>
       </main>
     </>
   );
