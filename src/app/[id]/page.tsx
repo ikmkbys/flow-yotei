@@ -6,6 +6,9 @@ import {
   onSnapshot, Timestamp, query, orderBy,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { useAuth } from '@/contexts/AuthContext';
+import AuthButton from '@/components/AuthButton';
+import { fetchFreeBusy } from '@/lib/calendar';
 import type { YoteiEvent, Response, Availability } from '@/lib/types';
 import HowToModal from '@/components/HowToModal';
 
@@ -72,6 +75,7 @@ const AVAIL_CYCLE: Availability[] = ['○', '△', '×'];
 
 export default function EventPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);  // Next.js 16: params is a Promise
+  const { user, googleAccessToken, refreshToken } = useAuth();
 
   const [event, setEvent]         = useState<YoteiEvent | null>(null);
   const [responses, setResponses] = useState<Response[]>([]);
@@ -105,6 +109,8 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
   const [showAllRanked, setShowAllRanked]             = useState(false);          // 人数別サマリ全件表示
   const [showAllRankedReq, setShowAllRankedReq]       = useState(false);          // 必須参加者別サマリ全件表示
   const [confirmedComments, setConfirmedComments]     = useState<Record<string, string>>({});  // 確定日程コメント
+  const [calLoading, setCalLoading]                   = useState(false);          // カレンダー反映中
+  const [calMessage, setCalMessage]                   = useState('');             // カレンダー反映結果メッセージ
 
   /* イベント取得 */
   useEffect(() => {
@@ -143,13 +149,26 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
       // 通知設定の初期値
       if (ev.notifyThreshold) setEditNotifyThreshold(ev.notifyThreshold);
       if (ev.notifyDeadline !== undefined) setEditNotifyDeadline(ev.notifyDeadline);
-      // localStorageで作成者判定
+      // 作成者判定：UID一致 → localStorage フォールバック
       const history = JSON.parse(localStorage.getItem('yotei_history') ?? '[]');
-      setIsCreator(history.some((h: { id: string }) => h.id === id));
+      const byLocalStorage = history.some((h: { id: string }) => h.id === id);
+      setIsCreator(byLocalStorage); // まずlocalStorageで判定（UID判定はuserロード後に上書き）
       const savedRequired = JSON.parse(localStorage.getItem(`yotei_required_${id}`) ?? '[]');
       setRequiredNames(savedRequired);
     });
   }, [id]);
+
+  /* ログイン後にUID判定で作成者を上書き */
+  useEffect(() => {
+    if (user && event?.creatorUid) {
+      setIsCreator(user.uid === event.creatorUid);
+    }
+  }, [user, event?.creatorUid]);
+
+  /* ログイン済みなら回答者名をプリフィル */
+  useEffect(() => {
+    if (user?.displayName && !name && !myResponseId) setName(user.displayName);
+  }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* 回答をリアルタイム購読 */
   useEffect(() => {
@@ -159,6 +178,41 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
     });
     return unsub;
   }, [id]);
+
+  /* Googleカレンダーから空き状況を反映 */
+  const handleCalendarReflect = async () => {
+    if (!event) return;
+    setCalLoading(true);
+    setCalMessage('');
+    try {
+      let token = googleAccessToken;
+      if (!token) {
+        token = await refreshToken();        // トークンなければ再ログイン
+      }
+      if (!token) { setCalLoading(false); return; }
+
+      try {
+        const result = await fetchFreeBusy(token, event.dates);
+        setAvail(prev => ({ ...prev, ...result }));
+        setCalMessage('カレンダーの予定を反映しました');
+      } catch (err: unknown) {
+        if (err instanceof Error && err.message === 'TOKEN_EXPIRED') {
+          token = await refreshToken();      // トークン期限切れ→再取得
+          if (!token) { setCalLoading(false); return; }
+          const result = await fetchFreeBusy(token, event.dates);
+          setAvail(prev => ({ ...prev, ...result }));
+          setCalMessage('カレンダーの予定を反映しました');
+        } else {
+          throw err;
+        }
+      }
+    } catch (err) {
+      console.error('Calendar reflect error:', err);
+      setCalMessage('カレンダーの取得に失敗しました');
+    }
+    setCalLoading(false);
+    setTimeout(() => setCalMessage(''), 3000); // 3秒後にメッセージ消去
+  };
 
   /* ○△× を循環切り替え */
   const cycleAvail = (date: string) => {
@@ -355,14 +409,17 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
       <header>
         <div className="header-inner">
           <a href="/" className="logo">FLOW YOTEI<span>.</span></a>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={() => setShowHowTo(true)}
-            style={{ marginLeft: 'auto', fontSize: 13 }}
-          >
-            ？ 使い方
-          </button>
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4 }}>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => setShowHowTo(true)}
+              style={{ fontSize: 13 }}
+            >
+              ？ 使い方
+            </button>
+            <AuthButton />
+          </div>
         </div>
       </header>
       {showHowTo && <HowToModal mode="respond" onClose={() => setShowHowTo(false)} />}
@@ -702,6 +759,36 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                   </div>
                 ))}
               </div>
+
+              {/* Googleカレンダー反映ボタン（ログイン時のみ） */}
+              {user && !isClosed && (
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+                  padding: '10px 14px', borderRadius: 10,
+                  background: 'var(--indigo-soft)', border: '1.5px solid var(--indigo)',
+                }}>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={handleCalendarReflect}
+                    disabled={calLoading}
+                    style={{ fontSize: 13, gap: 4 }}
+                  >
+                    {calLoading ? '取得中...' : '📅 カレンダーから反映'}
+                  </button>
+                  <span style={{ fontSize: 12, color: 'var(--muted)' }}>
+                    Googleカレンダーの予定から自動で○△×を入力します
+                  </span>
+                  {calMessage && (
+                    <span style={{
+                      fontSize: 12, fontWeight: 600, width: '100%',
+                      color: calMessage.includes('失敗') ? 'var(--red)' : '#16a34a',
+                    }}>
+                      {calMessage}
+                    </span>
+                  )}
+                </div>
+              )}
 
               <p className="hint">タップで切り替え　○ 参加できる ／ △ 未定 ／ × 参加できない</p>
 

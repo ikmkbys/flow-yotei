@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { collection, addDoc, Timestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { useAuth } from '@/contexts/AuthContext';
+import AuthButton from '@/components/AuthButton';
 import HowToModal from '@/components/HowToModal';
 
 /* 30分刻みの時刻オプションを生成（00:00〜23:30） */
@@ -16,6 +18,7 @@ const TIME_OPTIONS = ['', ...Array.from({ length: 48 }, (_, i) => {
 
 export default function CreatePage() {
   const router = useRouter();
+  const { user } = useAuth();
 
   const [title, setTitle]           = useState('');
   const [description, setDescription] = useState('');
@@ -45,6 +48,11 @@ export default function CreatePage() {
     const saved = JSON.parse(localStorage.getItem('yotei_history') ?? '[]');
     setHistory(saved);
   }, []);
+
+  /* ログイン済みなら名前をプリフィル */
+  useEffect(() => {
+    if (user?.displayName && !creatorName) setCreatorName(user.displayName);
+  }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ドラッグ終了をwindow全体で検知 */
   useEffect(() => {
@@ -155,6 +163,7 @@ export default function CreatePage() {
           ? (deadlineTime ? `${deadlineDate}T${deadlineTime}` : `${deadlineDate}T23:59`)
           : null,  // 日付だけ入れたら23:59を自動設定
         creatorName,
+        ...(user ? { creatorUid: user.uid } : {}), // ログイン中ならUID紐づけ
         dates: validDates,
         createdAt: Timestamp.now(),
       });
@@ -185,14 +194,17 @@ export default function CreatePage() {
       <header>
         <div className="header-inner">
           <a href="/" className="logo">FLOW YOTEI<span>.</span></a>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={() => setShowHowTo(true)}
-            style={{ marginLeft: 'auto', fontSize: 13 }}
-          >
-            ？ 使い方
-          </button>
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4 }}>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => setShowHowTo(true)}
+              style={{ fontSize: 13 }}
+            >
+              ？ 使い方
+            </button>
+            <AuthButton />
+          </div>
         </div>
       </header>
       {showHowTo && <HowToModal mode="create" onClose={() => setShowHowTo(false)} />}

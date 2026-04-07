@@ -11,6 +11,7 @@ export interface YoteiEvent {
   confirmedDateComments?: Record<string, string>; // 確定日程ごとのコメント
   dates: string[];            // ISO date strings: "2026-03-27" or "2026-03-27T14:00"
   creatorName: string;
+  creatorUid?: string;              // Firebase Auth UID（ログイン時のみ）
   createdAt?: Date;
   notifyThreshold?: number;       // N人回答で通知
   notified?: boolean;             // N人通知済みフラグ
