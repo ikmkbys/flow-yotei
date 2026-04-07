@@ -724,6 +724,36 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                 />
               </div>
 
+              {/* Googleカレンダー反映ボタン（ログイン時のみ） */}
+              {user && !isClosed && (
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+                  padding: '10px 14px', borderRadius: 10,
+                  background: 'var(--indigo-soft)', border: '1.5px solid var(--indigo)',
+                }}>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={handleCalendarReflect}
+                    disabled={calLoading}
+                    style={{ fontSize: 13, gap: 4 }}
+                  >
+                    {calLoading ? '取得中...' : '📅 カレンダーから反映'}
+                  </button>
+                  <span style={{ fontSize: 12, color: 'var(--muted)' }}>
+                    Googleカレンダーの予定から自動で○△×を入力します
+                  </span>
+                  {calMessage && (
+                    <span style={{
+                      fontSize: 12, fontWeight: 600, width: '100%',
+                      color: calMessage.includes('失敗') ? 'var(--red)' : '#16a34a',
+                    }}>
+                      {calMessage}
+                    </span>
+                  )}
+                </div>
+              )}
+
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {event.dates.map(date => (
                   <div
@@ -759,36 +789,6 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                   </div>
                 ))}
               </div>
-
-              {/* Googleカレンダー反映ボタン（ログイン時のみ） */}
-              {user && !isClosed && (
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
-                  padding: '10px 14px', borderRadius: 10,
-                  background: 'var(--indigo-soft)', border: '1.5px solid var(--indigo)',
-                }}>
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    onClick={handleCalendarReflect}
-                    disabled={calLoading}
-                    style={{ fontSize: 13, gap: 4 }}
-                  >
-                    {calLoading ? '取得中...' : '📅 カレンダーから反映'}
-                  </button>
-                  <span style={{ fontSize: 12, color: 'var(--muted)' }}>
-                    Googleカレンダーの予定から自動で○△×を入力します
-                  </span>
-                  {calMessage && (
-                    <span style={{
-                      fontSize: 12, fontWeight: 600, width: '100%',
-                      color: calMessage.includes('失敗') ? 'var(--red)' : '#16a34a',
-                    }}>
-                      {calMessage}
-                    </span>
-                  )}
-                </div>
-              )}
 
               <p className="hint">タップで切り替え　○ 参加できる ／ △ 未定 ／ × 参加できない</p>
 
