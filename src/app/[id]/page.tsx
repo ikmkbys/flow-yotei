@@ -186,10 +186,8 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
     setCalMessage('');
     try {
       let token = googleAccessToken;
-      console.log('[Calendar] googleAccessToken:', token ? `${token.slice(0, 20)}...` : 'null');
       if (!token) {
         token = await refreshToken();        // トークンなければ再ログイン
-        console.log('[Calendar] refreshed token:', token ? `${token.slice(0, 20)}...` : 'null');
       }
       if (!token) { setCalLoading(false); return; }
 
