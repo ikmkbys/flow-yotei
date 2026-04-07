@@ -100,6 +100,12 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
   const [editSaving, setEditSaving]       = useState(false);
   const [editDateError, setEditDateError] = useState('');
   const [showEarlyHours, setShowEarlyHours] = useState(false);  // 深夜帯時刻表示フラグ
+  // 編集カレンダー用state
+  const [editCalYear,  setEditCalYear]  = useState(() => new Date().getFullYear());
+  const [editCalMonth, setEditCalMonth] = useState(() => new Date().getMonth());
+  const [editSharedTime, setEditSharedTime] = useState('');
+  const [editIsDragging, setEditIsDragging] = useState(false);
+  const [editDragAction, setEditDragAction] = useState<'add' | 'remove'>('add');
   const [showForm, setShowForm]           = useState(true);    // 出欠フォーム折りたたみ
   // 通知設定編集用state
   const [editNotifyThreshold, setEditNotifyThreshold] = useState(3);
@@ -169,6 +175,13 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
   useEffect(() => {
     if (user?.displayName && !name && !myResponseId) setName(user.displayName);
   }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* 編集カレンダーのドラッグ終了をwindow全体で検知 */
+  useEffect(() => {
+    const stop = () => setEditIsDragging(false);
+    window.addEventListener('mouseup', stop);
+    return () => window.removeEventListener('mouseup', stop);
+  }, []);
 
   /* 回答をリアルタイム購読 */
   useEffect(() => {
@@ -296,20 +309,40 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
     setShowEdit(false);
   };
 
-  /* 編集フォームに日付追加（1つ上の翌日を初期値に） */
-  const addEditDate = () => {
-    const last = editDates[editDates.length - 1];
-    if (last?.date) {
-      const d = new Date(last.date + 'T00:00:00');
-      d.setDate(d.getDate() + 1);
-      setEditDates([...editDates, { date: d.toISOString().split('T')[0], time: last.time }]);
-    } else {
-      setEditDates([...editDates, { date: '', time: '' }]);
-    }
-  };
   const removeEditDate = (i: number) => setEditDates(editDates.filter((_, idx) => idx !== i));
   const updateEditDate = (i: number, field: 'date' | 'time', val: string) =>
-    setEditDates(prev => prev.map((d, idx) => idx === i ? { ...d, [field]: val } : d));  // 入力中はソートしない
+    setEditDates(prev => prev.map((d, idx) => idx === i ? { ...d, [field]: val } : d));
+
+  /* 編集カレンダー用ヘルパー */
+  const editPrevMonth = () => editCalMonth === 0 ? (setEditCalYear(y => y - 1), setEditCalMonth(11)) : setEditCalMonth(m => m - 1);
+  const editNextMonth = () => editCalMonth === 11 ? (setEditCalYear(y => y + 1), setEditCalMonth(0)) : setEditCalMonth(m => m + 1);
+  const toEditDateStr = (day: number) =>
+    `${editCalYear}-${String(editCalMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  const isEditDateSelected = (day: number) => editDates.some(d => d.date === toEditDateStr(day));
+  const isEditExactSelected = (day: number) => editDates.some(d => d.date === toEditDateStr(day) && d.time === editSharedTime);
+  const applyEditDrag = (dateStr: string, action: 'add' | 'remove') => {
+    if (action === 'add') {
+      setEditDates(prev => {
+        if (prev.some(d => d.date === dateStr && d.time === editSharedTime)) return prev;
+        return [...prev, { date: dateStr, time: editSharedTime }]
+          .sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')));
+      });
+    } else {
+      setEditDates(prev => prev.filter(d => !(d.date === dateStr && d.time === editSharedTime)));
+    }
+  };
+  const startEditDrag = (day: number) => {
+    const dateStr = toEditDateStr(day);
+    const isSelected = editDates.some(d => d.date === dateStr && d.time === editSharedTime);
+    const action = isSelected ? 'remove' : 'add';
+    setEditIsDragging(true);
+    setEditDragAction(action);
+    applyEditDrag(dateStr, action);
+  };
+  const continueEditDrag = (day: number) => {
+    if (!editIsDragging) return;
+    applyEditDrag(toEditDateStr(day), editDragAction);
+  };
 
   /* 重複チェック */
   const hasDuplicateDate = (list: { date: string; time: string }[]) => {
@@ -505,7 +538,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
               </div>
 
               <div>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
                   <label style={{ marginBottom: 0 }}>日程候補</label>
                   <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--muted)', cursor: 'pointer', userSelect: 'none' }}>
                     <input
@@ -517,39 +550,115 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                     0:00〜6:00も使用する
                   </label>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {editDates.map((d, i) => (
-                    <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                      <input
-                        type="date"
-                        value={d.date}
-                        onChange={e => updateEditDate(i, 'date', e.target.value)}
-                        onClick={e => (e.target as HTMLInputElement).showPicker?.()}
-                        style={{ flex: 2 }}
-                      />
-                      <select
-                        value={d.time}
-                        onChange={e => updateEditDate(i, 'time', e.target.value)}
-                        style={{ flex: 1 }}
-                      >
-                        {TIME_OPTIONS
-                          .filter(t => t === '' || showEarlyHours || parseInt(t.split(':')[0]) >= 6 || t === d.time)
-                          .map(t => (
-                            <option key={t} value={t}>{t || '時刻（任意）'}</option>
-                          ))}
-                      </select>
-                      {editDates.length > 1 && (
-                        <button type="button" className="btn btn-ghost btn-sm" onClick={() => removeEditDate(i)}>✕</button>
-                      )}
-                    </div>
-                  ))}
-                  <button type="button" className="btn btn-secondary btn-sm" onClick={addEditDate} style={{ alignSelf: 'flex-start' }}>
-                    ＋ 日程を追加
-                  </button>
-                  {editDateError && (
-                    <p style={{ color: 'var(--red)', fontSize: 13, marginTop: 6 }}>⚠️ {editDateError}</p>
-                  )}
+
+                {/* 共通時刻セレクタ */}
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12,
+                  background: 'var(--indigo-soft, #ede9fe)', border: '1.5px solid var(--indigo)',
+                  borderRadius: 10, padding: '10px 14px',
+                }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--indigo)', whiteSpace: 'nowrap' }}>
+                    🕐 共通時刻
+                  </span>
+                  <select
+                    value={editSharedTime}
+                    onChange={e => setEditSharedTime(e.target.value)}
+                    style={{ flex: 1, borderColor: 'var(--indigo)', fontWeight: 600 }}
+                  >
+                    {TIME_OPTIONS
+                      .filter(t => t === '' || showEarlyHours || parseInt(t.split(':')[0]) >= 6 || t === editSharedTime)
+                      .map(t => <option key={t} value={t}>{t || '時刻なし（終日）'}</option>)}
+                  </select>
+                  <span style={{ fontSize: 12, color: 'var(--indigo)', whiteSpace: 'nowrap', opacity: 0.8 }}>
+                    ← 先に設定
+                  </span>
                 </div>
+
+                {/* カレンダー */}
+                <div style={{ border: '1.5px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', background: 'var(--bg2)', borderBottom: '1px solid var(--border)' }}>
+                    <button type="button" onClick={editPrevMonth} className="btn btn-ghost btn-sm" style={{ padding: '4px 10px' }}>＜</button>
+                    <span style={{ fontWeight: 700, fontSize: 15 }}>{editCalYear}年{editCalMonth + 1}月</span>
+                    <button type="button" onClick={editNextMonth} className="btn btn-ghost btn-sm" style={{ padding: '4px 10px' }}>＞</button>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', background: 'var(--bg2)', borderBottom: '1px solid var(--border)' }}>
+                    {['日', '月', '火', '水', '木', '金', '土'].map((w, i) => (
+                      <div key={w} style={{ textAlign: 'center', fontSize: 12, fontWeight: 600, padding: '6px 0', color: i === 0 ? '#ef4444' : i === 6 ? '#6366f1' : 'var(--muted)' }}>
+                        {w}
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 1, padding: 8, background: 'var(--border)' }}>
+                    {(() => {
+                      const firstDay = new Date(editCalYear, editCalMonth, 1).getDay();
+                      const daysInMonth = new Date(editCalYear, editCalMonth + 1, 0).getDate();
+                      const days = [...Array(firstDay).fill(null), ...Array.from({ length: daysInMonth }, (_, i) => i + 1)];
+                      return days.map((day, i) => {
+                        if (!day) return <div key={i} style={{ background: 'var(--bg)', aspectRatio: '1' }} />;
+                        const exact   = isEditExactSelected(day);
+                        const anyTime = isEditDateSelected(day);
+                        const partial = anyTime && !exact;
+                        const dow = i % 7;
+                        const isToday = toEditDateStr(day) === new Date().toISOString().split('T')[0];
+                        const bg    = exact   ? 'var(--indigo)' : partial ? '#c7d2fe' : 'var(--bg)';
+                        const color = exact   ? '#fff'          : partial ? 'var(--indigo)'
+                                    : dow === 0 ? '#ef4444' : dow === 6 ? '#6366f1' : 'var(--text)';
+                        const border = exact ? 'none' : partial ? '2px solid var(--indigo)' : isToday ? '2px solid var(--indigo)' : 'none';
+                        return (
+                          <button
+                            key={i}
+                            type="button"
+                            onMouseDown={e => { e.preventDefault(); startEditDrag(day); }}
+                            onMouseEnter={() => continueEditDrag(day)}
+                            draggable={false}
+                            style={{
+                              aspectRatio: '1',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              fontSize: 14, fontWeight: anyTime ? 700 : 400,
+                              background: bg, color, border,
+                              borderRadius: 8, cursor: 'pointer',
+                              transition: 'all 0.12s',
+                              userSelect: 'none',
+                            }}
+                          >
+                            {day}
+                          </button>
+                        );
+                      });
+                    })()}
+                  </div>
+                </div>
+                <p className="hint" style={{ marginTop: 6 }}>日付をクリックで追加／もう一度クリックで削除</p>
+
+                {/* 選択済み日程リスト */}
+                {editDates.length > 0 && (
+                  <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)' }}>選択中 {editDates.length}件 — 時刻は個別に変更できます</p>
+                    {editDates.map((d, i) => {
+                      const dateObj = new Date(d.date + 'T00:00:00');
+                      const label = dateObj.toLocaleDateString('ja-JP', { month: 'short', day: 'numeric', weekday: 'short' });
+                      return (
+                        <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                          <span style={{ flex: 2, fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{label}</span>
+                          <select
+                            value={d.time}
+                            onChange={e => updateEditDate(i, 'time', e.target.value)}
+                            style={{ flex: 1, fontSize: 13 }}
+                          >
+                            {TIME_OPTIONS
+                              .filter(t => t === '' || showEarlyHours || parseInt(t.split(':')[0]) >= 6 || t === d.time)
+                              .map(t => <option key={t} value={t}>{t || '時刻なし'}</option>)}
+                          </select>
+                          <button type="button" className="btn btn-ghost btn-sm" onClick={() => removeEditDate(i)} aria-label="削除">✕</button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {editDateError && (
+                  <p style={{ color: 'var(--red)', fontSize: 13, marginTop: 6 }}>⚠️ {editDateError}</p>
+                )}
                 <p className="hint">既存の回答はそのまま保持されます</p>
               </div>
 
