@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import {
   onAuthStateChanged, signInWithPopup, signOut as fbSignOut,
-  GoogleAuthProvider, OAuthProvider,
+  GoogleAuthProvider,
   type User,
 } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
@@ -39,30 +39,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return unsub;
   }, []);
 
-  /* Google ログイン（Calendar read-only スコープ付き） */
-  const signInWithGoogle = useCallback(async () => {
+  /* Googleプロバイダー生成（共通） */
+  const makeProvider = () => {
     const provider = new GoogleAuthProvider();
     provider.addScope('https://www.googleapis.com/auth/calendar.readonly');
-    const result = await signInWithPopup(auth, provider);
-    const credential = OAuthProvider.credentialFromResult(result);
-    if (credential && 'accessToken' in credential) {
-      setGoogleAccessToken((credential as unknown as { accessToken: string }).accessToken);
-    }
-  }, []);
+    provider.setCustomParameters({ prompt: 'consent' }); // 毎回同意画面を表示してスコープを確実に取得
+    return provider;
+  };
+
+  /* Google ログイン（Calendar read-only スコープ付き） */
+  const signInWithGoogle = useCallback(async () => {
+    const result = await signInWithPopup(auth, makeProvider());
+    const credential = GoogleAuthProvider.credentialFromResult(result);
+    if (credential?.accessToken) setGoogleAccessToken(credential.accessToken);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* トークン再取得（期限切れ時用） */
   const refreshToken = useCallback(async () => {
-    const provider = new GoogleAuthProvider();
-    provider.addScope('https://www.googleapis.com/auth/calendar.readonly');
-    const result = await signInWithPopup(auth, provider);
-    const credential = OAuthProvider.credentialFromResult(result);
-    if (credential && 'accessToken' in credential) {
-      const token = (credential as unknown as { accessToken: string }).accessToken;
-      setGoogleAccessToken(token);
-      return token;
+    const result = await signInWithPopup(auth, makeProvider());
+    const credential = GoogleAuthProvider.credentialFromResult(result);
+    if (credential?.accessToken) {
+      setGoogleAccessToken(credential.accessToken);
+      return credential.accessToken;
     }
     return null;
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ログアウト */
   const signOut = useCallback(async () => {
