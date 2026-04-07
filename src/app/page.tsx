@@ -522,7 +522,7 @@ export default function CreatePage() {
 
         {/* Footer note */}
         <p style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 12, marginTop: 24 }}>
-          無料・登録不要 · <a href="https://stellars-lab.com" style={{ color: 'var(--indigo)' }}>Stellars Lab</a> · <a href="/help" style={{ color: 'var(--muted)' }}>ヘルプ</a> · <a href="/privacy" style={{ color: 'var(--muted)' }}>プライバシーポリシー</a>
+          無料・登録不要 · <a href="https://stellars-lab.com" style={{ color: 'var(--indigo)' }}>Stellars Lab</a> · <a href="/help" style={{ color: 'var(--muted)' }}>ヘルプ</a> · <a href="/privacy" style={{ color: 'var(--muted)' }}>プライバシーポリシー</a> · <a href="/terms" style={{ color: 'var(--muted)' }}>利用規約</a>
         </p>
       </main>
     </>
