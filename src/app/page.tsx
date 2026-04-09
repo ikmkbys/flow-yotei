@@ -472,11 +472,12 @@ export default function CreatePage() {
                     value={notifyEmail}
                     onChange={e => setNotifyEmail(e.target.value)}
                     required={notifyEnabled}
-                    style={{ fontSize: 14 }}
+                    style={{ fontSize: 14, ...(attempted && !notifyEmail ? { borderColor: 'var(--red)', outline: '1px solid var(--red)' } : {}) }}
                   />
-                  <p className="hint" style={{ margin: 0 }}>
-                    メールアドレスは暗号化して保存されます。他の参加者には表示されません。
-                  </p>
+                  {attempted && !notifyEmail
+                    ? <p className="error-msg" style={{ margin: 0 }}>メールアドレスを入力してください</p>
+                    : <p className="hint" style={{ margin: 0 }}>メールアドレスは暗号化して保存されます。他の参加者には表示されません。</p>
+                  }
                 </div>
               )}
             </div>
