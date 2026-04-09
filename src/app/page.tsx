@@ -189,6 +189,16 @@ export default function CreatePage() {
     }
   };
 
+  const shareService = () => {
+    const url = 'https://flow-yotei.stellars-lab.com';
+    const text = 'FLOW YOTEIで日程調整しませんか？カレンダーUIで直感的に候補日を選べます。';
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      navigator.share({ title: 'FLOW YOTEI', text, url }).catch(() => {});
+    } else {
+      window.open(`https://x.com/intent/tweet?text=${encodeURIComponent(text + '\n')}&url=${encodeURIComponent(url)}`, '_blank');
+    }
+  };
+
   return (
     <>
       <header>
@@ -202,6 +212,14 @@ export default function CreatePage() {
               style={{ fontSize: 13 }}
             >
               ？ 使い方
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={shareService}
+              style={{ fontSize: 13 }}
+            >
+              共有
             </button>
             <AuthButton />
           </div>
