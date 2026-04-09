@@ -425,14 +425,15 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
     setTimeout(() => setCopied(false), 2000);
   };
 
-  /* SNS共有 */
-  const shareToX = () => {
+  /* 共有 */
+  const shareEvent = () => {
     const url = window.location.href;
     const text = event ? `「${event.title}」の日程調整 - FLOW YOTEI` : 'FLOW YOTEI';
-    window.open(`https://x.com/intent/tweet?text=${encodeURIComponent(text + '\n')}&url=${encodeURIComponent(url)}`, '_blank');
-  };
-  const shareToLine = () => {
-    window.open(`https://social-plugins.line.me/lineit/share?url=${encodeURIComponent(window.location.href)}`, '_blank');
+    if (navigator.share) {
+      navigator.share({ title: event?.title ?? 'FLOW YOTEI', text, url }).catch(() => {});
+    } else {
+      window.open(`https://x.com/intent/tweet?text=${encodeURIComponent(text + '\n')}&url=${encodeURIComponent(url)}`, '_blank');
+    }
   };
 
   if (notFound) return (
@@ -822,11 +823,8 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
             <button className="btn btn-primary btn-sm" onClick={copyUrl}>
               {copied ? '✓ コピー済み' : 'コピー'}
             </button>
-            <button className="btn btn-ghost btn-sm" onClick={shareToX} style={{ fontSize: 12, fontWeight: 700 }}>
-              𝕏
-            </button>
-            <button className="btn btn-ghost btn-sm" onClick={shareToLine} style={{ fontSize: 12, fontWeight: 700, color: '#06c755' }}>
-              LINE
+            <button className="btn btn-ghost btn-sm" onClick={shareEvent} style={{ fontSize: 13 }}>
+              共有
             </button>
           </div>
         </div>
