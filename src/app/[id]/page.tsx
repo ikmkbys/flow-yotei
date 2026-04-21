@@ -1024,7 +1024,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
               maybe: countAvail(responses, date, '△'),
               ng:    countAvail(responses, date, '×'),
             }))
-            .sort((a, b) => b.ok - a.ok || a.ng - b.ng);
+            .sort((a, b) => a.ng - b.ng || b.ok - a.ok);
 
           // 必須参加者別ランキング（作成者・設定済み時のみ）
           const reqResponses = responses.filter(r => requiredNames.includes(r.name));
