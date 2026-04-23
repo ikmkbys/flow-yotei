@@ -902,7 +902,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                     {calLoading ? '取得中...' : '📅 カレンダーから反映'}
                   </button>
                   <span style={{ fontSize: 12, color: 'var(--muted)' }}>
-                    Googleカレンダーの予定から自動で○△×を入力します
+                    Googleカレンダーの予定から自動で○△×を入力します（読み取り専用・サーバーに保存しません）
                   </span>
                   {calMessage && (
                     <span style={{
