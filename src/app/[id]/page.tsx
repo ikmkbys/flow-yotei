@@ -11,60 +11,11 @@ import AuthButton from '@/components/AuthButton';
 import { fetchFreeBusy } from '@/lib/calendar';
 import type { YoteiEvent, Response, Availability } from '@/lib/types';
 import HowToModal from '@/components/HowToModal';
-
-/* 30分刻みの時刻オプション */
-const TIME_OPTIONS = ['', ...Array.from({ length: 48 }, (_, i) => {
-  const h = String(Math.floor(i / 2)).padStart(2, '0');
-  const m = i % 2 === 0 ? '00' : '30';
-  return `${h}:${m}`;
-})];
-
-/* Googleカレンダー登録URL生成 */
-function makeGCalUrl(iso: string, title: string, description?: string) {
-  const hasTime = iso.includes('T');
-  if (hasTime) {
-    // 時刻あり：開始〜+1時間をローカル時間で指定
-    const [date, time] = iso.split('T');
-    const [h, m] = time.split(':').map(Number);
-    const endH = String(h + 1).padStart(2, '0');  // 1時間後を終了に
-    const fmt = (d: string, hh: string, mm: string) =>
-      `${d.replace(/-/g, '')}T${hh}${mm}00`;
-    const start = fmt(date, String(h).padStart(2, '0'), String(m).padStart(2, '0'));
-    const end   = fmt(date, endH, String(m).padStart(2, '0'));
-    return `https://calendar.google.com/calendar/render?action=TEMPLATE` +
-      `&text=${encodeURIComponent(title)}` +
-      `&dates=${start}/${end}` +
-      (description ? `&details=${encodeURIComponent(description)}` : '');
-  } else {
-    // 終日：YYYYMMDD/翌日YYYYMMDD
-    const d = new Date(iso + 'T00:00:00');
-    const next = new Date(d); next.setDate(d.getDate() + 1);
-    const fmt = (dt: Date) => dt.toISOString().split('T')[0].replace(/-/g, '');
-    return `https://calendar.google.com/calendar/render?action=TEMPLATE` +
-      `&text=${encodeURIComponent(title)}` +
-      `&dates=${fmt(d)}/${fmt(next)}` +
-      (description ? `&details=${encodeURIComponent(description)}` : '');
-  }
-}
-
-/* 日付を日本語表示（時刻あれば追加） */
-function formatDate(iso: string) {
-  const hasTime = iso.includes('T');
-  const datePart = hasTime ? iso.split('T')[0] : iso;
-  const timePart = hasTime ? iso.split('T')[1] : null;
-  const d = new Date(datePart + 'T00:00:00');
-  const dateStr = d.toLocaleDateString('ja-JP', { month: 'long', day: 'numeric', weekday: 'short' });
-  return timePart ? `${dateStr} ${timePart}〜` : dateStr;  // 時刻あれば末尾に追加
-}
-
-/* 曜日カラー */
-function weekdayColor(iso: string) {
-  const datePart = iso.includes('T') ? iso.split('T')[0] : iso;
-  const day = new Date(datePart + 'T00:00:00').getDay();
-  if (day === 0) return '#ef4444';  // 日
-  if (day === 6) return '#6366f1';  // 土
-  return 'var(--text)';
-}
+import { formatDate, weekdayColor, makeGCalUrl } from '@/lib/dateUtils';
+import { storage } from '@/lib/storage';
+import EditPanel from '@/components/EditPanel';
+import ConfirmedDatesBanner from '@/components/ConfirmedDatesBanner';
+import SummaryRow from '@/components/SummaryRow';
 
 /* 集計 */
 function countAvail(responses: Response[], date: string, type: Availability) {
@@ -90,26 +41,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
   const [isCreator, setIsCreator]     = useState(false);   // 作成者かどうか
   const [showEdit, setShowEdit]       = useState(false);   // イベント編集パネル表示
   const [showHowTo, setShowHowTo]     = useState(false);   // 使い方モーダル
-  // 編集フォーム用state
-  const [editTitle, setEditTitle]     = useState('');
-  const [editDesc, setEditDesc]       = useState('');
-  const [editUrl, setEditUrl]         = useState('');
-  const [editDates, setEditDates]         = useState<{ date: string; time: string }[]>([]);
-  const [editDeadlineDate, setEditDeadlineDate] = useState('');
-  const [editDeadlineTime, setEditDeadlineTime] = useState('');
-  const [editSaving, setEditSaving]       = useState(false);
-  const [editDateError, setEditDateError] = useState('');
-  const [showEarlyHours, setShowEarlyHours] = useState(false);  // 深夜帯時刻表示フラグ
-  // 編集カレンダー用state
-  const [editCalYear,  setEditCalYear]  = useState(() => new Date().getFullYear());
-  const [editCalMonth, setEditCalMonth] = useState(() => new Date().getMonth());
-  const [editSharedTime, setEditSharedTime] = useState('');
-  const [editIsDragging, setEditIsDragging] = useState(false);
-  const [editDragAction, setEditDragAction] = useState<'add' | 'remove'>('add');
   const [showForm, setShowForm]           = useState(true);    // 出欠フォーム折りたたみ
-  // 通知設定編集用state
-  const [editNotifyThreshold, setEditNotifyThreshold] = useState(3);
-  const [editNotifyDeadline, setEditNotifyDeadline]   = useState(false);
   const [requiredNames, setRequiredNames]             = useState<string[]>([]);  // 必須参加者名（作成者のみ・localStorage）
   const [showRequiredPanel, setShowRequiredPanel]     = useState(false);          // 必須参加者設定パネル
   const [showAllRanked, setShowAllRanked]             = useState(false);          // 人数別サマリ全件表示
@@ -134,33 +66,14 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
       const init: Record<string, Availability> = {};
       data.dates.forEach((d: string) => { init[d] = '○'; });
       setAvail(init);
-      // 編集フォームの初期値をセット
-      setEditTitle(ev.title);
-      setEditDesc(ev.description ?? '');
-      setEditUrl(ev.eventUrl ?? '');
-      setEditDates(ev.dates.map(d => {
-        const [date, time] = d.includes('T') ? d.split('T') : [d, ''];
-        return { date, time };
-      }));
-      // 締め切りの初期値
-      if (ev.deadline) {
-        const [dDate, dTime] = ev.deadline.includes('T') ? ev.deadline.split('T') : [ev.deadline, ''];
-        setEditDeadlineDate(dDate);
-        setEditDeadlineTime(dTime === '23:59' ? '' : dTime);
-      }
       // 確定済みならフォームを閉じた状態で表示
       if ((ev.confirmedDates?.length ?? 0) > 0) setShowForm(false);
       // 確定日程コメントの初期値
       if (ev.confirmedDateComments) setConfirmedComments(ev.confirmedDateComments);
-      // 通知設定の初期値
-      if (ev.notifyThreshold) setEditNotifyThreshold(ev.notifyThreshold);
-      if (ev.notifyDeadline !== undefined) setEditNotifyDeadline(ev.notifyDeadline);
       // 作成者判定：UID一致 → localStorage フォールバック
-      const history = JSON.parse(localStorage.getItem('yotei_history') ?? '[]');
-      const byLocalStorage = history.some((h: { id: string }) => h.id === id);
+      const byLocalStorage = storage.getHistory().some(h => h.id === id);
       setIsCreator(byLocalStorage); // まずlocalStorageで判定（UID判定はuserロード後に上書き）
-      const savedRequired = JSON.parse(localStorage.getItem(`yotei_required_${id}`) ?? '[]');
-      setRequiredNames(savedRequired);
+      setRequiredNames(storage.getRequiredNames(id));
     });
   }, [id]);
 
@@ -175,13 +88,6 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
   useEffect(() => {
     if (user?.displayName && !name && !myResponseId) setName(user.displayName);
   }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  /* 編集カレンダーのドラッグ終了をwindow全体で検知 */
-  useEffect(() => {
-    const stop = () => setEditIsDragging(false);
-    window.addEventListener('mouseup', stop);
-    return () => window.removeEventListener('mouseup', stop);
-  }, []);
 
   /* 回答をリアルタイム購読 */
   useEffect(() => {
@@ -265,91 +171,6 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
     setSubmitting(false);
   };
 
-  /* イベント情報を保存 */
-  const handleSaveEvent = async () => {
-    if (!editTitle || editDates.filter(d => d.date).length === 0) return;
-    if (hasDuplicateDate(editDates.filter(d => d.date))) {
-      setEditDateError('同じ日程・時刻が重複しています');
-      return;
-    }
-    setEditDateError('');
-    setEditSaving(true);
-    // 保存時にソート＋重複排除
-    const seen = new Set<string>();
-    const newDates = editDates
-      .filter(d => d.date)
-      .sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')))
-      .filter(d => { const k = `${d.date}_${d.time}`; if (seen.has(k)) return false; seen.add(k); return true; })
-      .map(d => d.time ? `${d.date}T${d.time}` : d.date);
-    const newDeadline = editDeadlineDate
-      ? (editDeadlineTime ? `${editDeadlineDate}T${editDeadlineTime}` : `${editDeadlineDate}T23:59`)
-      : null;
-    await updateDoc(doc(db, 'events', id), {
-      title:       editTitle,
-      description: editDesc    || null,
-      eventUrl:    editUrl     || null,
-      deadline:    newDeadline,
-      dates:       newDates,
-    });
-    // 通知設定が元々ある場合、変更があればPATCHで更新
-    if (event?.notifyThreshold !== undefined || event?.notifyDeadline !== undefined) {
-      const thresholdChanged = editNotifyThreshold !== (event?.notifyThreshold ?? 3);
-      const deadlineChanged  = editNotifyDeadline  !== (event?.notifyDeadline  ?? false);
-      if (thresholdChanged || deadlineChanged) {
-        fetch('/api/notify-setup', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ eventId: id, threshold: editNotifyThreshold, notifyDeadline: editNotifyDeadline }),
-        }).catch(() => {});
-      }
-    }
-    // ローカルのeventも更新
-    setEvent(prev => prev ? { ...prev, title: editTitle, description: editDesc, eventUrl: editUrl, deadline: newDeadline ?? undefined, dates: newDates, notifyThreshold: editNotifyThreshold, notifyDeadline: editNotifyDeadline } : prev);
-    setEditSaving(false);
-    setShowEdit(false);
-  };
-
-  const removeEditDate = (i: number) => setEditDates(editDates.filter((_, idx) => idx !== i));
-  const updateEditDate = (i: number, field: 'date' | 'time', val: string) =>
-    setEditDates(prev => prev.map((d, idx) => idx === i ? { ...d, [field]: val } : d));
-
-  /* 編集カレンダー用ヘルパー */
-  const editPrevMonth = () => editCalMonth === 0 ? (setEditCalYear(y => y - 1), setEditCalMonth(11)) : setEditCalMonth(m => m - 1);
-  const editNextMonth = () => editCalMonth === 11 ? (setEditCalYear(y => y + 1), setEditCalMonth(0)) : setEditCalMonth(m => m + 1);
-  const toEditDateStr = (day: number) =>
-    `${editCalYear}-${String(editCalMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-  const isEditDateSelected = (day: number) => editDates.some(d => d.date === toEditDateStr(day));
-  const isEditExactSelected = (day: number) => editDates.some(d => d.date === toEditDateStr(day) && d.time === editSharedTime);
-  const applyEditDrag = (dateStr: string, action: 'add' | 'remove') => {
-    if (action === 'add') {
-      setEditDates(prev => {
-        if (prev.some(d => d.date === dateStr && d.time === editSharedTime)) return prev;
-        return [...prev, { date: dateStr, time: editSharedTime }]
-          .sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')));
-      });
-    } else {
-      setEditDates(prev => prev.filter(d => !(d.date === dateStr && d.time === editSharedTime)));
-    }
-  };
-  const startEditDrag = (day: number) => {
-    const dateStr = toEditDateStr(day);
-    const isSelected = editDates.some(d => d.date === dateStr && d.time === editSharedTime);
-    const action = isSelected ? 'remove' : 'add';
-    setEditIsDragging(true);
-    setEditDragAction(action);
-    applyEditDrag(dateStr, action);
-  };
-  const continueEditDrag = (day: number) => {
-    if (!editIsDragging) return;
-    applyEditDrag(toEditDateStr(day), editDragAction);
-  };
-
-  /* 重複チェック */
-  const hasDuplicateDate = (list: { date: string; time: string }[]) => {
-    const keys = list.filter(d => d.date).map(d => `${d.date}_${d.time}`);
-    return new Set(keys).size !== keys.length;
-  };
-
   /* 日程を確定する（複数選択トグル） */
   const handleConfirm = async (date: string) => {
     const current = event?.confirmedDates ?? [];
@@ -373,7 +194,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
       ? requiredNames.filter(n => n !== name)
       : [...requiredNames, name];
     setRequiredNames(next);
-    localStorage.setItem(`yotei_required_${id}`, JSON.stringify(next));
+    storage.setRequiredNames(id, next);
   };
 
   /* 名前クリック → その人の回答をフォームに読み込んで編集モードへ */
@@ -454,6 +275,9 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
         <div className="header-inner">
           <a href="/" className="logo">FLOW YOTEI<span>.</span></a>
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4 }}>
+            <a href="https://flow-basho.stellars-lab.com" target="_blank" rel="noopener noreferrer" className="btn btn-ghost btn-sm" style={{ fontSize: 13 }}>
+              場所決めはBASHO
+            </a>
             <button
               type="button"
               className="btn btn-ghost btn-sm"
@@ -544,276 +368,25 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
 
         {/* イベント編集パネル（作成者のみ） */}
         {isCreator && showEdit && (
-          <div className="card" style={{ marginBottom: 24, borderColor: 'var(--indigo)' }}>
-            <p className="section-title" style={{ marginBottom: 16 }}>✏️ イベントを編集</p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-
-              <div>
-                <label>イベント名 <span style={{ color: 'var(--red)' }}>*</span></label>
-                <input value={editTitle} onChange={e => setEditTitle(e.target.value)} />
-              </div>
-
-              <div>
-                <label>メモ（任意）</label>
-                <textarea value={editDesc} onChange={e => setEditDesc(e.target.value)} />
-              </div>
-
-              <div>
-                <label>イベントURL（任意）</label>
-                <input type="url" value={editUrl} onChange={e => setEditUrl(e.target.value)} placeholder="https://..." />
-              </div>
-
-              <div>
-                <label>回答締め切り（任意）</label>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <input
-                    type="date"
-                    value={editDeadlineDate}
-                    onChange={e => setEditDeadlineDate(e.target.value)}
-                    onClick={e => (e.target as HTMLInputElement).showPicker?.()}
-                    style={{ flex: 2 }}
-                  />
-                  <select
-                    value={editDeadlineTime}
-                    onChange={e => setEditDeadlineTime(e.target.value)}
-                    style={{ flex: 1 }}
-                  >
-                    {TIME_OPTIONS.map(t => (
-                      <option key={t} value={t}>{t || '時刻（省略=23:59）'}</option>
-                    ))}
-                  </select>
-                </div>
-                <p className="hint">空にすると締め切りなしになります</p>
-              </div>
-
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                  <label style={{ marginBottom: 0 }}>日程候補</label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--muted)', cursor: 'pointer', userSelect: 'none' }}>
-                    <input
-                      type="checkbox"
-                      checked={showEarlyHours}
-                      onChange={e => setShowEarlyHours(e.target.checked)}
-                      style={{ width: 14, height: 14, cursor: 'pointer' }}
-                    />
-                    0:00〜6:00も使用する
-                  </label>
-                </div>
-
-                {/* 共通時刻セレクタ */}
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12,
-                  background: 'var(--indigo-soft, #ede9fe)', border: '1.5px solid var(--indigo)',
-                  borderRadius: 10, padding: '10px 14px',
-                }}>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--indigo)', whiteSpace: 'nowrap' }}>
-                    🕐 共通時刻
-                  </span>
-                  <select
-                    value={editSharedTime}
-                    onChange={e => setEditSharedTime(e.target.value)}
-                    style={{ flex: 1, borderColor: 'var(--indigo)', fontWeight: 600 }}
-                  >
-                    {TIME_OPTIONS
-                      .filter(t => t === '' || showEarlyHours || parseInt(t.split(':')[0]) >= 6 || t === editSharedTime)
-                      .map(t => <option key={t} value={t}>{t || '時刻なし（終日）'}</option>)}
-                  </select>
-                  <span style={{ fontSize: 12, color: 'var(--indigo)', whiteSpace: 'nowrap', opacity: 0.8 }}>
-                    ← 先に設定
-                  </span>
-                </div>
-
-                {/* カレンダー */}
-                <div style={{ border: '1.5px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', background: 'var(--bg2)', borderBottom: '1px solid var(--border)' }}>
-                    <button type="button" onClick={editPrevMonth} className="btn btn-ghost btn-sm" style={{ padding: '4px 10px' }}>＜</button>
-                    <span style={{ fontWeight: 700, fontSize: 15 }}>{editCalYear}年{editCalMonth + 1}月</span>
-                    <button type="button" onClick={editNextMonth} className="btn btn-ghost btn-sm" style={{ padding: '4px 10px' }}>＞</button>
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', background: 'var(--bg2)', borderBottom: '1px solid var(--border)' }}>
-                    {['日', '月', '火', '水', '木', '金', '土'].map((w, i) => (
-                      <div key={w} style={{ textAlign: 'center', fontSize: 12, fontWeight: 600, padding: '6px 0', color: i === 0 ? '#ef4444' : i === 6 ? '#6366f1' : 'var(--muted)' }}>
-                        {w}
-                      </div>
-                    ))}
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 1, padding: 8, background: 'var(--border)' }}>
-                    {(() => {
-                      const firstDay = new Date(editCalYear, editCalMonth, 1).getDay();
-                      const daysInMonth = new Date(editCalYear, editCalMonth + 1, 0).getDate();
-                      const days = [...Array(firstDay).fill(null), ...Array.from({ length: daysInMonth }, (_, i) => i + 1)];
-                      return days.map((day, i) => {
-                        if (!day) return <div key={i} style={{ background: 'var(--bg)', aspectRatio: '1' }} />;
-                        const exact   = isEditExactSelected(day);
-                        const anyTime = isEditDateSelected(day);
-                        const partial = anyTime && !exact;
-                        const dow = i % 7;
-                        const isToday = toEditDateStr(day) === new Date().toISOString().split('T')[0];
-                        const bg    = exact   ? 'var(--indigo)' : partial ? '#c7d2fe' : 'var(--bg)';
-                        const color = exact   ? '#fff'          : partial ? 'var(--indigo)'
-                                    : dow === 0 ? '#ef4444' : dow === 6 ? '#6366f1' : 'var(--text)';
-                        const border = exact ? 'none' : partial ? '2px solid var(--indigo)' : isToday ? '2px solid var(--indigo)' : 'none';
-                        return (
-                          <button
-                            key={i}
-                            type="button"
-                            onMouseDown={e => { e.preventDefault(); startEditDrag(day); }}
-                            onMouseEnter={() => continueEditDrag(day)}
-                            draggable={false}
-                            style={{
-                              aspectRatio: '1',
-                              display: 'flex', alignItems: 'center', justifyContent: 'center',
-                              fontSize: 14, fontWeight: anyTime ? 700 : 400,
-                              background: bg, color, border,
-                              borderRadius: 8, cursor: 'pointer',
-                              transition: 'all 0.12s',
-                              userSelect: 'none',
-                            }}
-                          >
-                            {day}
-                          </button>
-                        );
-                      });
-                    })()}
-                  </div>
-                </div>
-                <p className="hint" style={{ marginTop: 6 }}>日付をクリックで追加／もう一度クリックで削除</p>
-
-                {/* 選択済み日程リスト */}
-                {editDates.length > 0 && (
-                  <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)' }}>選択中 {editDates.length}件 — 時刻は個別に変更できます</p>
-                    {editDates.map((d, i) => {
-                      const dateObj = new Date(d.date + 'T00:00:00');
-                      const label = dateObj.toLocaleDateString('ja-JP', { month: 'short', day: 'numeric', weekday: 'short' });
-                      return (
-                        <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                          <span style={{ flex: 2, fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{label}</span>
-                          <select
-                            value={d.time}
-                            onChange={e => updateEditDate(i, 'time', e.target.value)}
-                            style={{ flex: 1, fontSize: 13 }}
-                          >
-                            {TIME_OPTIONS
-                              .filter(t => t === '' || showEarlyHours || parseInt(t.split(':')[0]) >= 6 || t === d.time)
-                              .map(t => <option key={t} value={t}>{t || '時刻なし'}</option>)}
-                          </select>
-                          <button type="button" className="btn btn-ghost btn-sm" onClick={() => removeEditDate(i)} aria-label="削除">✕</button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {editDateError && (
-                  <p style={{ color: 'var(--red)', fontSize: 13, marginTop: 6 }}>⚠️ {editDateError}</p>
-                )}
-                <p className="hint">既存の回答はそのまま保持されます</p>
-              </div>
-
-              {/* 通知設定（設定済みの場合のみ表示） */}
-              {event?.notifyThreshold !== undefined && (
-                <div style={{ background: 'var(--bg2)', borderRadius: 10, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--muted)', margin: 0 }}>📧 回答通知</p>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginBottom: 0 }}>
-                    <input
-                      type="number"
-                      min={1}
-                      max={99}
-                      value={editNotifyThreshold}
-                      onChange={e => setEditNotifyThreshold(Math.max(1, parseInt(e.target.value) || 1))}
-                      style={{ width: 56, textAlign: 'center', fontWeight: 700, fontSize: 13 }}
-                    />
-                    <span style={{ fontSize: 13, color: 'var(--muted)' }}>人が回答したらメールで通知</span>
-                  </label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginBottom: 0 }}>
-                    <input
-                      type="checkbox"
-                      checked={editNotifyDeadline}
-                      onChange={e => setEditNotifyDeadline(e.target.checked)}
-                      style={{ width: 15, height: 15, cursor: 'pointer', accentColor: 'var(--indigo)' }}
-                    />
-                    <span style={{ fontSize: 13, color: 'var(--muted)' }}>回答期限日にメールで通知</span>
-                  </label>
-                </div>
-              )}
-
-              <button
-                className="btn btn-primary"
-                onClick={handleSaveEvent}
-                disabled={editSaving || !editTitle || editDates.filter(d => d.date).length === 0}
-                style={{ justifyContent: 'center' }}
-              >
-                {editSaving ? '保存中...' : '変更を保存する'}
-              </button>
-            </div>
-          </div>
+          <EditPanel
+            key={event.id}
+            event={event}
+            id={id}
+            onSaveComplete={(payload) => {
+              setEvent(prev => prev ? { ...prev, ...payload } : prev);
+              setShowEdit(false);
+            }}
+          />
         )}
 
         {/* 確定日程バナー（複数対応） */}
-        {(event.confirmedDates?.length ?? 0) > 0 && (
-          <div style={{
-            background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)',
-            borderRadius: 14, padding: '20px 24px', marginBottom: 24,
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: event.confirmedDates!.length > 1 ? 12 : 0 }}>
-              <span style={{ fontSize: 32 }}>🎉</span>
-              <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.7)', letterSpacing: '0.08em', margin: 0 }}>
-                開催日程が確定しました
-              </p>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {event.confirmedDates!.map(date => (
-                <div key={date}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-                    <p style={{ fontSize: 18, fontWeight: 800, color: '#fff', letterSpacing: '-0.3px', flex: 1, margin: 0 }}>
-                      {formatDate(date)}
-                    </p>
-                    <a
-                      href={makeGCalUrl(
-                        date,
-                        event.title,
-                        [event.description, event.eventUrl ? `🔗 ${event.eventUrl}` : ''].filter(Boolean).join('\n\n') || undefined,
-                      )}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{
-                        display: 'inline-flex', alignItems: 'center', gap: 6,
-                        padding: '6px 14px', borderRadius: 20,
-                        background: 'rgba(255,255,255,0.2)', color: '#fff',
-                        fontSize: 12, fontWeight: 700, textDecoration: 'none',
-                        border: '1.5px solid rgba(255,255,255,0.4)',
-                        backdropFilter: 'blur(4px)', flexShrink: 0,
-                      }}
-                    >
-                      📅 カレンダーに追加
-                    </a>
-                  </div>
-                  {/* 確定日程コメント */}
-                  {isCreator ? (
-                    <input
-                      type="text"
-                      placeholder="一言コメントを追加（任意）"
-                      value={confirmedComments[date] ?? ''}
-                      onChange={e => setConfirmedComments(prev => ({ ...prev, [date]: e.target.value }))}
-                      onBlur={e => saveConfirmedComment(date, e.target.value)}
-                      style={{
-                        marginTop: 8, width: '100%', boxSizing: 'border-box',
-                        padding: '7px 12px', borderRadius: 8, border: 'none',
-                        background: 'rgba(255,255,255,0.15)', color: '#fff',
-                        fontSize: 13, outline: 'none',
-                      }}
-                    />
-                  ) : confirmedComments[date] ? (
-                    <p style={{ margin: '6px 0 0', fontSize: 13, color: 'rgba(255,255,255,0.85)' }}>
-                      💬 {confirmedComments[date]}
-                    </p>
-                  ) : null}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        <ConfirmedDatesBanner
+          event={event}
+          isCreator={isCreator}
+          confirmedComments={confirmedComments}
+          onCommentChange={(date, value) => setConfirmedComments(prev => ({ ...prev, [date]: value }))}
+          onCommentBlur={(date, value) => saveConfirmedComment(date, value)}
+        />
 
         {/* URL共有 */}
         <div className="card" style={{ marginBottom: 24, padding: '16px 20px' }}>
@@ -1047,85 +620,13 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
 
           const DEFAULT_SHOW = 3;
 
-          const BADGE_COLORS = ['#f59e0b', '#94a3b8', '#b45309'];
-
-          const SummaryRow = ({
-            r, i, rankList, accentColor, showConfirm,
-          }: {
-            r: { date: string; ok: number; maybe?: number; ng?: number; reqOk?: number; reqMaybe?: number; reqNg?: number };
-            i: number;
-            rankList: unknown[];
-            accentColor: string;
-            showConfirm: boolean;
-          }) => (
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 12,
-              padding: '10px 0',
-              borderBottom: i < rankList.length - 1 ? '1px solid var(--border)' : 'none',
-            }}>
-              <span style={{
-                width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 13, fontWeight: 700,
-                background: BADGE_COLORS[i] ?? 'var(--bg3)',
-                color: '#fff',
-              }}>
-                {i + 1}
-              </span>
-              <span style={{
-                flex: 1, fontWeight: i === 0 ? 700 : 500,
-                color: i === 0 ? 'var(--text)' : 'var(--muted)',
-                fontSize: i === 0 ? 15 : 14,
-              }}>
-                {formatDate(r.date)}
-                {i === 0 && (
-                  <span style={{ marginLeft: 8, fontSize: 11, color: accentColor, fontWeight: 700 }}>
-                    ◀ 最有力
-                  </span>
-                )}
-              </span>
-              <div style={{ display: 'flex', gap: 6, flexShrink: 0, flexDirection: 'column', alignItems: 'flex-end' }}>
-                {r.reqOk !== undefined ? (
-                  <>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: accentColor }}>
-                      必須 {Math.round((r.reqOk / reqTotal) * 100)}%
-                    </span>
-                    <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-                      ○{r.reqOk} △{r.reqMaybe} ×{r.reqNg}　全体○{r.ok}
-                    </span>
-                  </>
-                ) : (
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: '#16a34a' }}>○{r.ok}</span>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: '#ca8a04' }}>△{r.maybe}</span>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: '#dc2626' }}>×{r.ng}</span>
-                  </div>
-                )}
-              </div>
-              {showConfirm && (
-                <button
-                  onClick={() => handleConfirm(r.date)}
-                  style={{
-                    flexShrink: 0, fontSize: 11, fontWeight: 700,
-                    padding: '4px 10px', borderRadius: 20, cursor: 'pointer', border: 'none',
-                    background: event.confirmedDates?.includes(r.date) ? '#4f46e5' : 'var(--bg3)',
-                    color: event.confirmedDates?.includes(r.date) ? '#fff' : 'var(--muted)',
-                    transition: 'all 0.2s',
-                  }}
-                >
-                  {event.confirmedDates?.includes(r.date) ? '✓ 確定中' : '確定する'}
-                </button>
-              )}
-            </div>
-          );
-
           return (
             <>
               {/* 人数別サマリ */}
               <div className="card" style={{ borderColor: 'var(--indigo)', background: 'var(--indigo-soft)', marginBottom: 16 }}>
                 <p className="section-title" style={{ marginBottom: 12 }}>🏆 候補日サマリ（人数別）</p>
                 {(showAllRanked ? ranked : ranked.slice(0, DEFAULT_SHOW)).map((r, i) => (
-                  <SummaryRow key={r.date} r={r} i={i} rankList={showAllRanked ? ranked : ranked.slice(0, DEFAULT_SHOW)} accentColor="#f59e0b" showConfirm={isCreator && rankedReq.length === 0} />
+                  <SummaryRow key={r.date} r={r} i={i} rankList={showAllRanked ? ranked : ranked.slice(0, DEFAULT_SHOW)} accentColor="#f59e0b" showConfirm={isCreator && rankedReq.length === 0} confirmedDates={event.confirmedDates ?? []} reqTotal={reqTotal} onConfirm={handleConfirm} />
                 ))}
                 {ranked.length > DEFAULT_SHOW && (
                   <button
@@ -1203,7 +704,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                     必須参加者 {reqTotal}名の参加率順
                   </p>
                   {(showAllRankedReq ? rankedReq : rankedReq.slice(0, DEFAULT_SHOW)).map((r, i) => (
-                    <SummaryRow key={r.date} r={r} i={i} rankList={showAllRankedReq ? rankedReq : rankedReq.slice(0, DEFAULT_SHOW)} accentColor="#f59e0b" showConfirm={true} />
+                    <SummaryRow key={r.date} r={r} i={i} rankList={showAllRankedReq ? rankedReq : rankedReq.slice(0, DEFAULT_SHOW)} accentColor="#f59e0b" showConfirm={true} confirmedDates={event.confirmedDates ?? []} reqTotal={reqTotal} onConfirm={handleConfirm} />
                   ))}
                   {rankedReq.length > DEFAULT_SHOW && (
                     <button

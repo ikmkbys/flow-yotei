@@ -8,13 +8,12 @@ import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import AuthButton from '@/components/AuthButton';
 import HowToModal from '@/components/HowToModal';
-
-/* 30分刻みの時刻オプションを生成（00:00〜23:30） */
-const TIME_OPTIONS = ['', ...Array.from({ length: 48 }, (_, i) => {
-  const h = String(Math.floor(i / 2)).padStart(2, '0');  // 時
-  const m = i % 2 === 0 ? '00' : '30';                   // 分
-  return `${h}:${m}`;
-})];
+import {
+  TIME_OPTIONS, getCalendarDays, toDateStr,
+  sortAndDedupeDates, useDragSelection, type DateTuple,
+} from '@/lib/calendarUtils';
+import { MAX_EVENT_HISTORY } from '@/lib/constants';
+import { storage, type HistoryEntry } from '@/lib/storage';
 
 export default function CreatePage() {
   const router = useRouter();
@@ -27,16 +26,14 @@ export default function CreatePage() {
   const [deadlineTime, setDeadlineTime] = useState(''); // 締め切り時刻
   const [creatorName, setCreatorName] = useState('');
   // { date: '2026-03-27', time: '19:00' } の形で管理
-  const [dates, setDates] = useState<{ date: string; time: string }[]>([]);
+  const [dates, setDates] = useState<DateTuple[]>([]);
   const [sharedTime, setSharedTime]   = useState('');            // カレンダー共通時刻
   const [showEarlyHours, setShowEarlyHours] = useState(false);   // 深夜帯時刻表示フラグ
   const [calYear,  setCalYear]  = useState(() => new Date().getFullYear());
   const [calMonth, setCalMonth] = useState(() => new Date().getMonth()); // 0-indexed
   const [loading, setLoading] = useState(false);
   const [showHowTo, setShowHowTo] = useState(false);  // 使い方モーダル
-  const [isDragging, setIsDragging]   = useState(false);            // ドラッグ中フラグ
-  const [dragAction, setDragAction]   = useState<'add' | 'remove'>('add'); // ドラッグ操作種別
-  const [history, setHistory]   = useState<{ id: string; title: string; createdAt: number }[]>([]);
+  const [history, setHistory]   = useState<HistoryEntry[]>([]);
   const [notifyEnabled, setNotifyEnabled]     = useState(false);  // 通知機能ON/OFF
   const [notifyEmail, setNotifyEmail]         = useState('');     // 通知先メール
   const [notifyThreshold, setNotifyThreshold] = useState(3);      // 通知する人数
@@ -45,8 +42,7 @@ export default function CreatePage() {
 
   /* localStorageから履歴を読み込む（クライアントのみ） */
   useEffect(() => {
-    const saved = JSON.parse(localStorage.getItem('yotei_history') ?? '[]');
-    setHistory(saved);
+    setHistory(storage.getHistory());
   }, []);
 
   /* ログイン済みなら名前をプリフィル */
@@ -54,60 +50,15 @@ export default function CreatePage() {
     if (user?.displayName && !creatorName) setCreatorName(user.displayName);
   }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /* ドラッグ終了をwindow全体で検知 */
-  useEffect(() => {
-    const stop = () => setIsDragging(false);
-    window.addEventListener('mouseup', stop);
-    return () => window.removeEventListener('mouseup', stop);
-  }, []);
-
-  /* ドラッグ中のセルへの適用 */
-  const applyDrag = (dateStr: string, action: 'add' | 'remove') => {
-    if (action === 'add') {
-      setDates(prev => {
-        if (prev.some(d => d.date === dateStr && d.time === sharedTime)) return prev;
-        return [...prev, { date: dateStr, time: sharedTime }]
-          .sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')));
-      });
-    } else {
-      setDates(prev => prev.filter(d => !(d.date === dateStr && d.time === sharedTime)));
-    }
-  };
-
-  /* ドラッグ開始（クリック単体もこれで処理） */
-  const startDrag = (day: number) => {
-    const dateStr = toDateStr(day);
-    const isSelected = dates.some(d => d.date === dateStr && d.time === sharedTime);
-    const action = isSelected ? 'remove' : 'add';
-    setIsDragging(true);
-    setDragAction(action);
-    applyDrag(dateStr, action);
-  };
-
-  /* ドラッグ継続（マウスが他のセルに入ったとき） */
-  const continueDrag = (day: number) => {
-    if (!isDragging) return;
-    applyDrag(toDateStr(day), dragAction);
-  };
-
-  /* カレンダーグリッド生成（null=空セル） */
-  const getCalendarDays = (year: number, month: number): (number | null)[] => {
-    const firstDay = new Date(year, month, 1).getDay();       // 曜日（0=日）
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-    return [...Array(firstDay).fill(null), ...Array.from({ length: daysInMonth }, (_, i) => i + 1)];
-  };
+  const { startDrag, continueDrag } = useDragSelection(dates, setDates, sharedTime, calYear, calMonth);
 
   /* カレンダー月移動 */
   const prevMonth = () => calMonth === 0 ? (setCalYear(y => y - 1), setCalMonth(11)) : setCalMonth(m => m - 1);
   const nextMonth = () => calMonth === 11 ? (setCalYear(y => y + 1), setCalMonth(0))  : setCalMonth(m => m + 1);
 
-  /* 日付文字列を生成 */
-  const toDateStr = (day: number) =>
-    `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-
   /* カレンダーをクリックして日付をトグル */
   const toggleCalendarDate = (day: number) => {
-    const dateStr = toDateStr(day);
+    const dateStr = toDateStr(calYear, calMonth, day);
     const exists = dates.some(d => d.date === dateStr && d.time === sharedTime);
     if (exists) {
       setDates(prev => prev.filter(d => !(d.date === dateStr && d.time === sharedTime)));
@@ -118,10 +69,10 @@ export default function CreatePage() {
   };
 
   /* その日に選択済みエントリがあるか（時刻問わず） */
-  const isDateSelected = (day: number) => dates.some(d => d.date === toDateStr(day));
+  const isDateSelected = (day: number) => dates.some(d => d.date === toDateStr(calYear, calMonth, day));
 
   /* その日の共通時刻と完全一致するエントリがあるか */
-  const isExactSelected = (day: number) => dates.some(d => d.date === toDateStr(day) && d.time === sharedTime);
+  const isExactSelected = (day: number) => dates.some(d => d.date === toDateStr(calYear, calMonth, day) && d.time === sharedTime);
 
   /* 日付候補を削除 */
   const removeDate = (i: number) =>
@@ -147,10 +98,7 @@ export default function CreatePage() {
     e.preventDefault();
     // "2026-03-27T19:00" or "2026-03-27" の文字列に変換して保存
     // 重複排除してから保存
-    const seen = new Set<string>();
-    const validDates = dates
-      .filter(d => { const k = `${d.date}_${d.time}`; if (seen.has(k)) return false; seen.add(k); return true; })
-      .map(d => d.time ? `${d.date}T${d.time}` : d.date);
+    const validDates = sortAndDedupeDates(dates).map(d => d.time ? `${d.date}T${d.time}` : d.date);
     setAttempted(true);
     if (!title || !creatorName || validDates.length === 0 || (notifyEnabled && !notifyEmail)) return;
     setLoading(true);
@@ -169,9 +117,9 @@ export default function CreatePage() {
       });
 
       // 作成履歴をlocalStorageに保存（最大20件）
-      const history = JSON.parse(localStorage.getItem('yotei_history') ?? '[]');
+      const history = storage.getHistory();
       history.unshift({ id: ref.id, title, createdAt: Date.now() });
-      localStorage.setItem('yotei_history', JSON.stringify(history.slice(0, 20)));
+      storage.setHistory(history.slice(0, MAX_EVENT_HISTORY));
 
       // 通知設定がある場合はサーバーに保存（メールを暗号化）
       if (notifyEnabled && notifyEmail) {
@@ -205,6 +153,9 @@ export default function CreatePage() {
         <div className="header-inner">
           <a href="/" className="logo">FLOW YOTEI<span>.</span></a>
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4 }}>
+            <a href="https://flow-basho.stellars-lab.com" target="_blank" rel="noopener noreferrer" className="btn btn-ghost btn-sm" style={{ fontSize: 13 }}>
+              場所決めはBASHO
+            </a>
             <button
               type="button"
               className="btn btn-ghost btn-sm"
@@ -369,7 +320,7 @@ export default function CreatePage() {
                     const anyTime = isDateSelected(day);     // 別の時刻で登録済み
                     const partial = anyTime && !exact;       // 別の時刻のみ登録あり
                     const dow = (i) % 7;                     // 曜日インデックス
-                    const isToday = toDateStr(day) === new Date().toISOString().split('T')[0];
+                    const isToday = toDateStr(calYear, calMonth, day) === new Date().toISOString().split('T')[0];
                     // 3ステート背景・文字色
                     const bg    = exact   ? 'var(--indigo)' : partial ? '#c7d2fe' : 'var(--bg)';
                     const color = exact   ? '#fff'          : partial ? 'var(--indigo)'
