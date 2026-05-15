@@ -21,6 +21,7 @@ export interface YoteiEvent {
 
 export interface Response {
   id?: string;
+  uid?: string | null;                         // Firebase Auth UID（ログイン済みの場合のみ）
   name: string;
   availability: Record<string, Availability>;  // date → availability
   comment?: string;                            // 一言コメント（任意）

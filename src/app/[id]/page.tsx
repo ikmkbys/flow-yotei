@@ -93,7 +93,14 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
   useEffect(() => {
     const q = query(collection(db, 'events', id, 'responses'), orderBy('createdAt', 'asc'));
     const unsub = onSnapshot(q, snap => {
-      setResponses(snap.docs.map(d => ({ id: d.id, ...d.data() } as Response)));
+      const loaded = snap.docs.map(d => ({ id: d.id, ...d.data() } as Response));
+      setResponses(loaded);
+      // localStorage に保存済みの自分の回答 ID を復元
+      setMyResponseId(prev => {
+        if (prev) return prev;
+        const saved = localStorage.getItem(`yotei_myResponse_${id}`);
+        return saved && loaded.some(r => r.id === saved) ? saved : prev;
+      });
     });
     return unsub;
   }, [id]);
@@ -159,9 +166,11 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
         name,
         availability: avail,
         comment: comment || null,
+        uid: user?.uid ?? null,
         createdAt: Timestamp.now(),
       });
-      setMyResponseId(ref.id);  // 次回編集用にIDを保持
+      setMyResponseId(ref.id);
+      localStorage.setItem(`yotei_myResponse_${id}`, ref.id);
 
       // 通知設定があれば閾値チェック（失敗してもUI影響なし）
       fetch(`/api/notify/${id}`, { method: 'POST' }).catch(() => {});
@@ -207,6 +216,26 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
     // フォームまでスクロール
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
+
+  /* 回答を削除（ログイン必須） */
+  const handleDeleteResponse = async (responseId: string) => {
+    if (!user) {
+      alert('削除するには Google ログインが必要です');
+      return;
+    }
+    if (!confirm('この回答を削除しますか？')) return;
+    const res = await fetch(`/api/responses/${id}/${responseId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${await user.getIdToken()}` },
+    });
+    if (res.ok && myResponseId === responseId) {
+      setMyResponseId(null);
+      localStorage.removeItem(`yotei_myResponse_${id}`);
+    }
+  };
+
+  const canDelete = (r: Response) =>
+    user != null && (isCreator || (r.uid != null && r.uid === user.uid));
 
   /* 出欠表をCSVダウンロード */
   const downloadCsv = () => {
@@ -749,16 +778,36 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                     {responses.map(r => (
                       <th
                         key={r.id}
-                        onClick={() => !(event.confirmedDates?.length) && handleSelectResponse(r)}
-                        title={event.confirmedDates?.length ? undefined : 'クリックして回答を変更'}
                         style={{
-                          cursor: event.confirmedDates?.length ? 'default' : 'pointer',
                           color: myResponseId === r.id ? 'var(--indigo)' : undefined,
-                          textDecoration: event.confirmedDates?.length ? 'none' : 'underline dotted',
                           userSelect: 'none',
                         }}
                       >
-                        {r.name}{!event.confirmedDates?.length && ' ✏️'}
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                          <span
+                            onClick={() => !(event.confirmedDates?.length) && handleSelectResponse(r)}
+                            title={event.confirmedDates?.length ? undefined : 'クリックして回答を変更'}
+                            style={{
+                              cursor: event.confirmedDates?.length ? 'default' : 'pointer',
+                              textDecoration: event.confirmedDates?.length ? 'none' : 'underline dotted',
+                            }}
+                          >
+                            {r.name}{!event.confirmedDates?.length && ' ✏️'}
+                          </span>
+                          {canDelete(r) && (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteResponse(r.id!)}
+                              title="この回答を削除"
+                              style={{
+                                background: 'none', border: 'none', cursor: 'pointer',
+                                fontSize: 12, color: '#dc2626', padding: '0 2px', lineHeight: 1,
+                              }}
+                            >
+                              🗑
+                            </button>
+                          )}
+                        </div>
                       </th>
                     ))}
                     {/* 最右：集計列 */}
