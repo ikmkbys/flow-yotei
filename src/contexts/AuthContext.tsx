@@ -25,6 +25,14 @@ const AuthContext = createContext<AuthContextType>({
 
 export const useAuth = () => useContext(AuthContext);
 
+/* Googleプロバイダー生成（コンポーネント外でstableな参照を確保） */
+function makeGoogleProvider() {
+  const provider = new GoogleAuthProvider();
+  provider.addScope('https://www.googleapis.com/auth/calendar.readonly');
+  provider.setCustomParameters({ prompt: 'consent' });
+  return provider;
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser]       = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -39,31 +47,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return unsub;
   }, []);
 
-  /* Googleプロバイダー生成（共通） */
-  const makeProvider = () => {
-    const provider = new GoogleAuthProvider();
-    provider.addScope('https://www.googleapis.com/auth/calendar.readonly');
-    provider.setCustomParameters({ prompt: 'consent' }); // 毎回同意画面を表示してスコープを確実に取得
-    return provider;
-  };
-
   /* Google ログイン（Calendar read-only スコープ付き） */
   const signInWithGoogle = useCallback(async () => {
-    const result = await signInWithPopup(auth, makeProvider());
+    const result = await signInWithPopup(auth, makeGoogleProvider());
     const credential = GoogleAuthProvider.credentialFromResult(result);
     if (credential?.accessToken) setGoogleAccessToken(credential.accessToken);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   /* トークン再取得（期限切れ時用） */
   const refreshToken = useCallback(async () => {
-    const result = await signInWithPopup(auth, makeProvider());
+    const result = await signInWithPopup(auth, makeGoogleProvider());
     const credential = GoogleAuthProvider.credentialFromResult(result);
     if (credential?.accessToken) {
       setGoogleAccessToken(credential.accessToken);
       return credential.accessToken;
     }
     return null;
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   /* ログアウト */
   const signOut = useCallback(async () => {

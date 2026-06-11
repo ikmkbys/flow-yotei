@@ -22,6 +22,9 @@ function countAvail(responses: Response[], date: string, type: Availability) {
   return responses.filter(r => r.availability[date] === type).length;
 }
 
+/* http(s)以外のスキームを弾く（javascript:等のXSS対策） */
+const isSafeUrl = (url: string) => /^https?:\/\//i.test(url);
+
 const AVAIL_CYCLE: Availability[] = ['○', '△', '×'];
 
 export default function EventPage({ params }: { params: Promise<{ id: string }> }) {
@@ -383,7 +386,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
           {event.description && (
             <p style={{ color: 'var(--muted)', fontSize: 14 }}>{event.description}</p>
           )}
-          {event.eventUrl && (
+          {event.eventUrl && isSafeUrl(event.eventUrl) && (
             <a
               href={event.eventUrl}
               target="_blank"

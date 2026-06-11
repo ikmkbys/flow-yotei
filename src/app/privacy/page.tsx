@@ -16,7 +16,7 @@ export default function PrivacyPage() {
 
       <main className="container" style={{ paddingTop: 40, paddingBottom: 60, maxWidth: 680 }}>
         <h1 style={{ fontSize: 22, fontWeight: 800, marginBottom: 8 }}>プライバシーポリシー</h1>
-        <p style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 32 }}>制定日：2026年4月6日　最終更新：2026年4月7日</p>
+        <p style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 32 }}>制定日：2026年4月6日　最終更新：2026年4月30日</p>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
 
@@ -80,6 +80,44 @@ export default function PrivacyPage() {
               本サービスでは Vercel Analytics を使用し、ページビュー数・参照元などの匿名化されたデータを収集しています。
               個人を特定できる情報は取得しません。
             </p>
+          </section>
+
+          <section>
+            <h2 style={{ fontSize: 15, fontWeight: 700, marginBottom: 10 }}>データの第三者提供について</h2>
+            <p style={{ lineHeight: 1.8, marginBottom: 10 }}>
+              本サービスはユーザーから取得した情報（Googleアカウント情報・カレンダーの空き状況を含む）を、第三者に販売・貸与しません。
+              また、取得したデータをAI/MLモデルの学習に使用することはありません。
+              法令に基づく開示請求があった場合を除き、Googleユーザーデータを第三者に開示・移転することはありません。
+            </p>
+            <p style={{ lineHeight: 1.8, marginBottom: 6 }}>サービス提供のため、以下の委託先に必要最小限の範囲でアクセスを許可しています。</p>
+            <ul style={{ paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 6, lineHeight: 1.8 }}>
+              <li><strong>Firebase / Google LLC</strong>：認証・データ保存</li>
+              <li><strong>Vercel Inc.</strong>：ホスティング・匿名アクセス解析</li>
+              <li><strong>Resend</strong>：回答通知メールの配信</li>
+            </ul>
+          </section>
+
+          <section>
+            <h2 style={{ fontSize: 15, fontWeight: 700, marginBottom: 10 }}>データの保護措置</h2>
+            <ul style={{ paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 8, lineHeight: 1.8 }}>
+              <li>通信はすべてHTTPS（TLS）で暗号化しています。</li>
+              <li>通知用メールアドレスはAES-256-CBCで暗号化してFirestoreに保存します。</li>
+              <li>Firestoreセキュリティルールにより、作成日時・作成者IDの改ざんを禁止しています。</li>
+              <li>Googleカレンダーの空き状況はブラウザ上でのみ処理し、サーバーへの保存は一切行いません。</li>
+              <li>Googleカレンダーのアクセストークンはブラウザメモリのみで保持し、永続化しません。</li>
+              <li>認証はGoogle OAuth 2.0を使用します。本サービスはGoogleパスワードを取得・保存しません。</li>
+            </ul>
+          </section>
+
+          <section>
+            <h2 style={{ fontSize: 15, fontWeight: 700, marginBottom: 10 }}>データの保持期間と削除</h2>
+            <ul style={{ paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 8, lineHeight: 1.8 }}>
+              <li>イベント・回答データは、イベント作成日から<strong>180日後</strong>に自動削除されます。削除前にイベントページのCSVダウンロード機能でデータを保存することをおすすめします。</li>
+              <li>Googleカレンダーの空き状況はブラウザを閉じると消去されます（サーバーへの保存はありません）。</li>
+              <li>Googleアカウント情報（Firebase Authentication）の取り扱いはGoogleのプライバシーポリシーに準拠します。</li>
+              <li>ユーザーは <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--indigo)' }}>Googleアカウントの権限設定</a> から本サービスへのアクセス許可をいつでも取り消せます。</li>
+              <li>早期削除を希望される場合は stellarsbit@gmail.com までご連絡ください。7営業日以内に対応いたします。</li>
+            </ul>
           </section>
 
           <section>

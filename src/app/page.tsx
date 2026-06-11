@@ -15,6 +15,9 @@ import {
 import { MAX_EVENT_HISTORY } from '@/lib/constants';
 import { storage, type HistoryEntry } from '@/lib/storage';
 
+/* メール形式の簡易チェック（厳密な検証はサーバー側zodで実施） */
+const isValidEmail = (s: string) => /^\S+@\S+\.\S+$/.test(s);
+
 export default function CreatePage() {
   const router = useRouter();
   const { user } = useAuth();
@@ -100,7 +103,7 @@ export default function CreatePage() {
     // 重複排除してから保存
     const validDates = sortAndDedupeDates(dates).map(d => d.time ? `${d.date}T${d.time}` : d.date);
     setAttempted(true);
-    if (!title || !creatorName || validDates.length === 0 || (notifyEnabled && !notifyEmail)) return;
+    if (!title || !creatorName || validDates.length === 0 || (notifyEnabled && !isValidEmail(notifyEmail))) return;
     setLoading(true);
     try {
       const ref = await addDoc(collection(db, 'events'), {
@@ -123,11 +126,19 @@ export default function CreatePage() {
 
       // 通知設定がある場合はサーバーに保存（メールを暗号化）
       if (notifyEnabled && notifyEmail) {
-        await fetch('/api/notify-setup', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ eventId: ref.id, email: notifyEmail, threshold: notifyThreshold, notifyDeadline }),
-        }).catch(() => {/* 通知設定の失敗はイベント作成に影響させない */});
+        try {
+          const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+          if (user) headers.Authorization = `Bearer ${await user.getIdToken()}`;  // ログイン作成イベントは作成者検証に必要
+          const res = await fetch('/api/notify-setup', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ eventId: ref.id, email: notifyEmail, threshold: notifyThreshold, notifyDeadline }),
+          });
+          if (!res.ok) throw new Error(`notify-setup failed: ${res.status}`);
+        } catch (err) {
+          console.error('[notify-setup]', err);
+          alert('イベントは作成されましたが、通知設定の保存に失敗しました。');  // 失敗はイベント作成自体に影響させない
+        }
       }
 
       router.push(`/${ref.id}`);  // 作成後イベントページへ
@@ -441,10 +452,10 @@ export default function CreatePage() {
                     value={notifyEmail}
                     onChange={e => setNotifyEmail(e.target.value)}
                     required={notifyEnabled}
-                    style={{ fontSize: 14, ...(attempted && !notifyEmail ? { borderColor: 'var(--red)', outline: '1px solid var(--red)' } : {}) }}
+                    style={{ fontSize: 14, ...(attempted && !isValidEmail(notifyEmail) ? { borderColor: 'var(--red)', outline: '1px solid var(--red)' } : {}) }}
                   />
-                  {attempted && !notifyEmail
-                    ? <p className="error-msg" style={{ margin: 0 }}>メールアドレスを入力してください</p>
+                  {attempted && !isValidEmail(notifyEmail)
+                    ? <p className="error-msg" style={{ margin: 0 }}>{notifyEmail ? '正しいメールアドレスを入力してください' : 'メールアドレスを入力してください'}</p>
                     : <p className="hint" style={{ margin: 0 }}>メールアドレスは暗号化して保存されます。他の参加者には表示されません。</p>
                   }
                 </div>

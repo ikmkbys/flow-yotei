@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { useAuth } from '@/contexts/AuthContext';
 import { TIME_OPTIONS, useDragSelection, sortAndDedupeDates, hasDuplicateDate, toDateStr, getCalendarDays, type DateTuple } from '@/lib/calendarUtils';
 import type { YoteiEvent } from '@/lib/types';
 
@@ -23,6 +24,7 @@ type Props = {
 };
 
 export default function EditPanel({ event, id, onSaveComplete }: Props) {
+  const { user } = useAuth();
   const [editTitle, setEditTitle]               = useState(event.title);
   const [editDesc, setEditDesc]                 = useState(event.description ?? '');
   const [editUrl, setEditUrl]                   = useState(event.eventUrl ?? '');
@@ -94,11 +96,19 @@ export default function EditPanel({ event, id, onSaveComplete }: Props) {
       const thresholdChanged = editNotifyThreshold !== (event.notifyThreshold ?? 3);
       const deadlineChanged  = editNotifyDeadline  !== (event.notifyDeadline  ?? false);
       if (thresholdChanged || deadlineChanged) {
-        fetch('/api/notify-setup', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ eventId: id, threshold: editNotifyThreshold, notifyDeadline: editNotifyDeadline }),
-        }).catch(() => {});
+        try {
+          const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+          if (user) headers.Authorization = `Bearer ${await user.getIdToken()}`;  // ログイン作成イベントは作成者検証に必要
+          const res = await fetch('/api/notify-setup', {
+            method: 'PATCH',
+            headers,
+            body: JSON.stringify({ eventId: id, threshold: editNotifyThreshold, notifyDeadline: editNotifyDeadline }),
+          });
+          if (!res.ok) throw new Error(`notify-setup PATCH failed: ${res.status}`);
+        } catch (err) {
+          console.error('[notify-setup PATCH]', err);
+          alert('イベントは保存されましたが、通知設定の更新に失敗しました。');  // 保存自体は成功させる
+        }
       }
     }
 

@@ -1,4 +1,5 @@
 import type { Availability } from './types';
+import { AVAILABILITY_THRESHOLDS, BUSINESS_HOURS } from './constants';
 
 /* Google Calendar FreeBusy API を使って候補日の空き状況を判定 */
 export async function fetchFreeBusy(
@@ -64,13 +65,13 @@ export async function fetchFreeBusy(
           return sum + (oEnd - oStart);
         }, 0);
         const ratio = totalOverlap / (end - start);
-        result[date] = ratio >= 0.5 ? '×' : '△';            // 半分以上→×、それ未満→△
+        result[date] = ratio >= AVAILABILITY_THRESHOLDS.SLOT_BUSY ? '×' : '△';
       }
     } else {
       // 終日：ビジネスアワー(9-18)の予定量で判定
-      const dayStart = new Date(date + 'T09:00:00+09:00').getTime();
-      const dayEnd   = new Date(date + 'T18:00:00+09:00').getTime();
-      const bizHours = 9 * 60 * 60 * 1000;
+      const dayStart = new Date(`${date}T${String(BUSINESS_HOURS.START).padStart(2,'0')}:00:00+09:00`).getTime();
+      const dayEnd   = new Date(`${date}T${String(BUSINESS_HOURS.END).padStart(2,'0')}:00:00+09:00`).getTime();
+      const bizHours = (BUSINESS_HOURS.END - BUSINESS_HOURS.START) * 60 * 60 * 1000;
 
       const totalBusy = busy.reduce((sum, b) => {
         if (b.end <= dayStart || b.start >= dayEnd) return sum;
@@ -80,9 +81,9 @@ export async function fetchFreeBusy(
       }, 0);
 
       const busyRatio = totalBusy / bizHours;
-      if (busyRatio >= 0.67) result[date] = '×';             // 6h以上→×
-      else if (busyRatio >= 0.33) result[date] = '△';        // 3h以上→△
-      else result[date] = '○';                                // それ以下→○
+      if (busyRatio >= AVAILABILITY_THRESHOLDS.DAY_BUSY)       result[date] = '×';
+      else if (busyRatio >= AVAILABILITY_THRESHOLDS.DAY_DELTA) result[date] = '△';
+      else                                                      result[date] = '○';
     }
   }
 

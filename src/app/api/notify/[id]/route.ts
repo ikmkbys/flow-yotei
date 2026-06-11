@@ -1,6 +1,5 @@
 import type { NextRequest } from 'next/server';
-import { doc, getDoc, getDocs, collection, updateDoc } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { getAdminDb } from '@/lib/firebase-admin';
 import { decrypt } from '@/lib/encrypt';
 
 function escapeHtml(s: string) {
@@ -66,12 +65,14 @@ export async function POST(_req: NextRequest, ctx: RouteContext<'/api/notify/[id
   const { id } = await ctx.params;
 
   try {
-    const eventSnap = await getDoc(doc(db, 'events', id));
-    if (!eventSnap.exists()) {
+    const adminDb = getAdminDb();
+    const eventRef = adminDb.doc(`events/${id}`);
+    const eventSnap = await eventRef.get();
+    if (!eventSnap.exists) {
       return Response.json({ error: 'Event not found' }, { status: 404 });
     }
 
-    const data = eventSnap.data();
+    const data = eventSnap.data()!;
     const { notifyEmail, notifyThreshold, notified } = data as {
       notifyEmail?: string;
       notifyThreshold?: number;
@@ -84,7 +85,7 @@ export async function POST(_req: NextRequest, ctx: RouteContext<'/api/notify/[id
     }
 
     // 回答数カウント
-    const responsesSnap = await getDocs(collection(db, 'events', id, 'responses'));
+    const responsesSnap = await eventRef.collection('responses').get();
     const count = responsesSnap.size;
 
     if (count < notifyThreshold) {
@@ -94,7 +95,7 @@ export async function POST(_req: NextRequest, ctx: RouteContext<'/api/notify/[id
     // 閾値到達 → メール送信＋通知済みフラグ更新
     const email = decrypt(notifyEmail);
     await sendEmail(email, data.title as string, id, count);
-    await updateDoc(doc(db, 'events', id), { notified: true });
+    await eventRef.update({ notified: true });
 
     return Response.json({ ok: true, notified: true, count });
   } catch (err) {

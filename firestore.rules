@@ -1,0 +1,41 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /events/{eventId} {
+      allow read: if true;
+
+      allow create: if request.resource.data.keys().hasAll(['title', 'dates', 'creatorName', 'createdAt'])
+                   && request.resource.data.title is string
+                   && request.resource.data.title.size() > 0
+                   && request.resource.data.title.size() <= 200
+                   && request.resource.data.dates is list
+                   && request.resource.data.creatorName is string
+                   && request.resource.data.creatorName.size() > 0
+                   && request.resource.data.creatorName.size() <= 50
+                   // 通知系フィールドはサーバー（Admin SDK）経由のみ
+                   && !request.resource.data.keys().hasAny(['notifyEmail', 'notifyThreshold', 'notified', 'notifyDeadline', 'deadlineNotified']);
+
+      // createdAt・creatorUid・通知系フィールドの書き換えを禁止（通知系はAdmin SDK経由のみ）
+      allow update: if !request.resource.data.diff(resource.data).affectedKeys()
+                       .hasAny(['createdAt', 'creatorUid', 'notifyEmail', 'notifyThreshold', 'notified', 'notifyDeadline', 'deadlineNotified']);
+
+      allow delete: if false;
+
+      match /responses/{responseId} {
+        allow read: if true;
+
+        allow create: if request.resource.data.keys().hasAll(['name', 'availability', 'createdAt'])
+                     && request.resource.data.name is string
+                     && request.resource.data.name.size() > 0
+                     && request.resource.data.name.size() <= 50;
+
+        allow update: if request.resource.data.name is string
+                     && request.resource.data.name.size() > 0
+                     && !request.resource.data.diff(resource.data).affectedKeys()
+                        .hasAny(['createdAt']);
+
+        allow delete: if false;
+      }
+    }
+  }
+}

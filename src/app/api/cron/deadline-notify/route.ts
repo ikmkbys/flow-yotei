@@ -1,5 +1,4 @@
-import { collection, getDocs, query, where, updateDoc, doc } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { getAdminDb } from '@/lib/firebase-admin';
 import { decrypt } from '@/lib/encrypt';
 
 function escapeHtml(s: string) {
@@ -64,7 +63,8 @@ async function sendDeadlineEmail(to: string, eventTitle: string, eventId: string
 export async function GET(request: Request) {
   // Vercel Cron の認証チェック
   const authHeader = request.headers.get('authorization');
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  const cronSecret = process.env.CRON_SECRET;
+  if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {  // 未設定時は明示的に拒否
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -75,12 +75,11 @@ export async function GET(request: Request) {
 
   try {
     // 今日が期限のイベントを取得（ISO文字列比較）
-    const q = query(
-      collection(db, 'events'),
-      where('deadline', '>=', `${today}T00:00`),
-      where('deadline', '<=', `${today}T23:59`),
-    );
-    const snap = await getDocs(q);
+    const adminDb = getAdminDb();
+    const snap = await adminDb.collection('events')
+      .where('deadline', '>=', `${today}T00:00`)
+      .where('deadline', '<=', `${today}T23:59`)
+      .get();
 
     let sent = 0;
     let skipped = 0;
@@ -97,7 +96,7 @@ export async function GET(request: Request) {
       try {
         const email = decrypt(data.notifyEmail as string);
         await sendDeadlineEmail(email, data.title as string, docSnap.id);
-        await updateDoc(doc(db, 'events', docSnap.id), { deadlineNotified: true });
+        await docSnap.ref.update({ deadlineNotified: true });
         sent++;
       } catch (err) {
         console.error(`[deadline-notify] Failed for event ${docSnap.id}:`, err);
